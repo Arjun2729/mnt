@@ -15,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from groundtruth import charts, connectors, insights, ml, stats, theme, timeseries
+from groundtruth import charts, connectors, insights, llm, ml, stats, theme, timeseries
 from groundtruth.agent import ToolBox, ask_stream
 from groundtruth.alerts import (
     AGGREGATIONS,
@@ -627,12 +627,51 @@ with tabs[4]:
     theme.label("Analyst")
     st.caption("Given SQL, chart and statistics tools over the filtered view. It computes answers rather than estimating them.")
 
-    settings = st.columns([2, 2, 1])
-    api_key = settings[0].text_input("OpenAI API key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
-    model_name = settings[1].text_input("Model", value=os.getenv("OPENAI_MODEL", "gpt-4o"))
-    if settings[2].button("Clear chat", width="stretch"):
-        S.chat = []
-        st.rerun()
+    with st.expander("Model provider", expanded=not S.chat):
+        names = list(llm.PROVIDERS)
+        provider_name = st.selectbox(
+            "Provider", names,
+            index=names.index(st.session_state.get("provider_name", llm.DEFAULT_PROVIDER)),
+            format_func=lambda n: f"{n} — free" if llm.PROVIDERS[n].free else n,
+            key="provider_name",
+        )
+        provider = llm.PROVIDERS[provider_name]
+        if provider.note:
+            (st.success if provider.free else st.info)(provider.note)
+        if provider.signup_url:
+            st.caption(f"Get a key: {provider.signup_url}")
+
+        setup = st.columns([2, 2])
+        base_url = setup[0].text_input(
+            "Base URL", value=provider.base_url or "",
+            help="The OpenAI-compatible endpoint. Leave as-is unless self-hosting.",
+            disabled=provider_name not in ("Custom (OpenAI-compatible)", "Ollama (local)"),
+        )
+        model_name = setup[1].text_input(
+            "Model", value=llm.resolve_model(provider), key=f"model_{provider_name}",
+            help="Model ids change often — use 'List models' to see what your key can reach.",
+        )
+        api_key = st.text_input(
+            f"{provider_name} API key", type="password", value=llm.resolve_key(provider),
+            help=f"Or set {provider.key_env} in your environment.",
+            disabled=not provider.needs_key,
+        )
+
+        checks = st.columns(4)
+        if checks[0].button("Test connection", width="stretch"):
+            ok, message = llm.check_connection(provider, api_key, model_name, base_url)
+            (st.success if ok else st.error)(message)
+        if checks[1].button("Check tool calling", width="stretch"):
+            ok, message = llm.supports_tools(provider, api_key, model_name, base_url)
+            (st.success if ok else st.warning)(message)
+        if checks[2].button("List models", width="stretch"):
+            try:
+                st.code("\n".join(llm.list_models(provider, api_key, base_url)) or "none returned")
+            except Exception as exc:
+                st.error(f"{type(exc).__name__}: {exc}")
+        if checks[3].button("Clear chat", width="stretch"):
+            S.chat = []
+            st.rerun()
 
     for turn in S.chat:
         with st.chat_message(turn["role"]):
@@ -645,16 +684,17 @@ with tabs[4]:
 
     question = st.chat_input("Ask about the filtered data…")
     if question:
-        if not api_key:
-            st.error("Add an OpenAI API key to use the analyst.")
+        if provider.needs_key and not api_key:
+            st.error(
+                f"Add a {provider_name} API key to use the analyst — "
+                f"free from {provider.signup_url}"
+            )
         else:
             S.chat.append({"role": "user", "content": question})
             with st.chat_message("user"):
                 st.markdown(question)
             with st.chat_message("assistant"):
                 try:
-                    from openai import OpenAI
-
                     view = sync_view()
                     view_spec = profile(S.store, view)
                     toolbox = ToolBox(S.store, view, view_spec)
@@ -667,8 +707,9 @@ with tabs[4]:
 
                     def event_stream():
                         """Drive the agent, surfacing tool calls live and streaming the answer."""
+                        client = llm.make_client(provider, api_key, base_url)
                         for kind, payload in ask_stream(
-                            OpenAI(api_key=api_key), model_name, question, toolbox, history
+                            client, model_name, question, toolbox, history
                         ):
                             if kind == "tool":
                                 if payload.error:

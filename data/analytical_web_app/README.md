@@ -92,10 +92,30 @@ Ask "what was median revenue for Paid in Q3?" and it computes the exact figure a
 you the SQL. Every query it runs is displayed beneath the answer and recorded in the
 lineage. Errors are returned to the model so it can correct itself rather than failing.
 
+### Choosing a provider
+
+The analyst talks to any OpenAI-compatible chat-completions endpoint, so the provider is a
+setting rather than a dependency. **Google Gemini has a free tier and needs no payment
+method**, and is the default.
+
+| Provider | Free | Get a key |
+|---|---|---|
+| **Google Gemini** (default) | yes | https://aistudio.google.com/apikey |
+| Groq | yes | https://console.groq.com/keys |
+| OpenRouter | models ending `:free` | https://openrouter.ai/keys |
+| Ollama | yes, runs locally | https://ollama.com/download |
+| OpenAI | no, billing required | https://platform.openai.com/api-keys |
+
 ```bash
-export OPENAI_API_KEY="..."
-export OPENAI_MODEL="gpt-4o"
+export LLM_PROVIDER="Google Gemini"
+export GEMINI_API_KEY="..."
+export LLM_MODEL="gemini-2.0-flash"
 ```
+
+Or just pick a provider and paste the key in the Analyst tab. Three buttons there check the
+setup before you rely on it: **Test connection**, **Check tool calling** (the analyst needs
+it, and not every model has it) and **List models** (ids change often — this asks the
+endpoint what your key can actually reach).
 
 The tool layer is provider-independent — `ToolBox` executes calls and knows nothing about
 the model, which is why the whole loop is tested offline against a scripted fake client.
@@ -160,7 +180,7 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 132 tests
+python -m pytest tests -q          # 143 tests
 ```
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
@@ -183,13 +203,14 @@ groundtruth/            the library — 14 modules
   ml.py                 L3 leaderboard, permutation importance, leakage
   timeseries.py         L3 STL, changepoints, forecasting
   charts.py             role-driven charts, cross-filtering, time controls
+  llm.py                provider presets for any OpenAI-compatible endpoint
   theme.py              typography, motion, composite components
   agent.py              L4 tool-calling loop
   insights.py           L4 proactive scan
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  132 tests
+tests/                  143 tests
 legacy/                 the original MVP, still runnable
 ```
 
