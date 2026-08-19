@@ -186,7 +186,8 @@ CSS = """
   letter-spacing: -0.02em; line-height: 1.03; margin: 0 0 0.55rem;
 }
 .gt-hero-sub { font-size: 1.02rem; color: var(--gt-muted); max-width: 60ch; line-height: 1.55; margin: 0; }
-.gt-hero-rule { height: 2px; background: currentColor; margin: 1.6rem 0 1.4rem; opacity: 0.9; }
+.gt-hero-rule { height: 2px; background: currentColor; margin: 1.5rem 0 1.6rem; opacity: 0.9; max-width: 46rem; }
+.gt-hero-title, .gt-hero-sub { max-width: 46rem; }
 .gt-feature-num {
   font-family: var(--gt-mono); font-size: 0.66rem; letter-spacing: 0.1em;
   color: var(--gt-accent); display: block; margin-bottom: 0.3rem;
@@ -332,8 +333,8 @@ def pill(state: str) -> str:
 def hero() -> None:
     st.markdown(
         '<div class="gt-hero-title">Every number traceable<br>to the query that produced it.</div>'
-        '<p class="gt-hero-sub">An analytical workspace on DuckDB. Load a dataset from the sidebar to begin — '
-        "<code>sample_data.csv</code> is included and exercises every tab.</p>"
+        '<p class="gt-hero-sub">An analytical workspace on DuckDB. Every answer shows the '
+        "query behind it, and every threshold it applies is yours to change.</p>"
         '<div class="gt-hero-rule"></div>',
         unsafe_allow_html=True,
     )

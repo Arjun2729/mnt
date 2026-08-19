@@ -233,75 +233,43 @@ with st.sidebar:
             st.rerun()
 
 if not S.active:
+    # Nothing useful exists before a dataset is loaded, so this stays small and
+    # gets out of the way rather than filling the screen to look busy.
     theme.hero()
 
-    start, detail = st.columns([2, 3], gap="large")
+    start, _ = st.columns([3, 2])
+    sample = Path("sample_data.csv")
+    if sample.exists():
+        rows = sum(1 for _ in sample.open()) - 1
+        if start.button(f"Load the sample — {rows:,} rows", type="primary"):
+            result = connectors.load_path(S.store, str(sample), "sample_data")
+            S.active = result.dataset.name
+            S.provenance.record("load", f"Loaded {sample.name} ({result.dataset.rows:,} rows)",
+                                path=str(sample), rows=result.dataset.rows)
+            refresh_spec()
+            st.rerun()
 
-    with start:
-        theme.label("Start here")
-        sample = Path("sample_data.csv")
-        if sample.exists():
-            rows = sum(1 for _ in sample.open()) - 1
-            st.caption(f"Included sample — {rows:,} rows of monthly revenue across regions and channels.")
-            if st.button("Load the sample dataset", type="primary", width="stretch"):
-                result = connectors.load_path(S.store, str(sample), "sample_data")
-                S.active = result.dataset.name
-                S.provenance.record("load", f"Loaded {sample.name} ({result.dataset.rows:,} rows)",
-                                    path=str(sample), rows=result.dataset.rows)
+    uploaded = start.file_uploader("or upload a file", type=connectors.SUPPORTED_UPLOAD_TYPES)
+    if uploaded is not None:
+        try:
+            result = connectors.load_upload(S.store, uploaded)
+            S.active = result.dataset.name
+            S.provenance.record("load", f"Loaded {uploaded.name} ({result.dataset.rows:,} rows)",
+                                path=uploaded.name, rows=result.dataset.rows)
+            refresh_spec()
+            st.rerun()
+        except Exception as exc:
+            st.error(f"{type(exc).__name__}: {exc}")
+
+    if S.store.datasets:
+        theme.label("Already loaded")
+        for name, dataset in S.store.datasets.items():
+            if start.button(f"{name} · {dataset.rows:,} rows", key=f"reopen_{name}"):
+                S.active = name
                 refresh_spec()
                 st.rerun()
 
-        uploaded = st.file_uploader("Or upload your own", type=connectors.SUPPORTED_UPLOAD_TYPES,
-                                    label_visibility="visible")
-        if uploaded is not None:
-            try:
-                result = connectors.load_upload(S.store, uploaded)
-                S.active = result.dataset.name
-                S.provenance.record("load", f"Loaded {uploaded.name} ({result.dataset.rows:,} rows)",
-                                    path=uploaded.name, rows=result.dataset.rows)
-                refresh_spec()
-                st.rerun()
-            except Exception as exc:
-                st.error(f"{type(exc).__name__}: {exc}")
-
-        st.caption("Databases and JSON APIs are in the sidebar.")
-
-        if S.store.datasets:
-            theme.label("Already loaded")
-            for name, dataset in S.store.datasets.items():
-                if st.button(f"{name} · {dataset.rows:,} rows", key=f"reopen_{name}", width="stretch"):
-                    S.active = name
-                    refresh_spec()
-                    st.rerun()
-
-    with detail:
-        theme.label("What this does, and does not, decide for you")
-        st.markdown(
-            "Answers are computed from the data you load — the analyst runs SQL and shows it, "
-            "and nothing is precomputed for the sample. But **the thresholds that decide what "
-            "counts as a finding are choices**, not discoveries."
-        )
-        rows = []
-        for knob in KNOBS:
-            rows.append({
-                "Setting": knob.label,
-                "Default": knob.default,
-                "Basis": "convention" if knob.is_convention else "judgement",
-                "Why this value": knob.rationale,
-            })
-        st.dataframe(
-            pd.DataFrame(rows), width="stretch", hide_index=True, height=300,
-            column_config={
-                "Setting": st.column_config.TextColumn(width="medium"),
-                "Default": st.column_config.NumberColumn(width="small"),
-                "Basis": st.column_config.TextColumn(width="small"),
-                "Why this value": st.column_config.TextColumn(width="large"),
-            },
-        )
-        st.caption(
-            "Every one of these is adjustable once a dataset is loaded, under **Methodology** "
-            "in the sidebar, and each finding states the rule that produced it."
-        )
+    start.caption("Databases and JSON APIs are in the sidebar.")
     st.stop()
 
 if S.spec is None:
