@@ -9,3 +9,6 @@ pytest>=8.0,<9
 # skeleton. Playwright waits on real time instead.
 # Uses your installed Chrome via channel="chrome" — no browser download needed.
 playwright>=1.40,<2
+
+# Reliable file watching, so edits to groundtruth/ reload without a restart.
+watchdog>=4.0,<7

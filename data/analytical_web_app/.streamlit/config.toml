@@ -1,5 +1,9 @@
 [server]
 maxUploadSize = 500
+# Rerun on save. With watchdog installed (see requirements-dev.txt) Streamlit also
+# reloads edited modules under groundtruth/ — without it, library changes need a
+# manual restart because the old module stays cached in sys.modules.
+runOnSave = true
 
 [browser]
 gatherUsageStats = false
