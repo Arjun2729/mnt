@@ -108,3 +108,39 @@ def test_exception_objects_are_accepted():
 
 def test_deprecation_wording_is_also_handled():
     assert llm.suggest_replacement("model deprecated; switch to gemini-9.9-pro") == "gemini-9.9-pro"
+
+
+# ---------------- rate limits ----------------
+
+
+def test_rate_limit_is_detected_from_a_real_429():
+    error = (
+        "Error code: 429 - [{'error': {'code': 429, 'message': 'You exceeded your current "
+        "quota... Quota exceeded for metric: generate_content_free_tier_requests, limit: 5, "
+        "model: gemini-3.6-flash Please retry in 51.99214101s.', "
+        "'status': 'RESOURCE_EXHAUSTED', 'retryDelay': '51s'}}]"
+    )
+    assert llm.is_rate_limited(error)
+    assert llm.parse_quota_limit(error) == "5"
+    # A second of headroom over the provider's own figure.
+    assert 52 <= llm.parse_retry_delay(error) <= 54
+
+
+@pytest.mark.parametrize("message", ["Error code: 401 - bad key", "Connection refused", "404 not found"])
+def test_other_errors_are_not_rate_limits(message):
+    assert not llm.is_rate_limited(message)
+
+
+def test_retry_delay_falls_back_when_unstated():
+    assert llm.parse_retry_delay("429 too many requests", default=17.0) == 17.0
+
+
+def test_retry_delay_is_capped():
+    assert llm.parse_retry_delay("429, please retry in 9999s") <= 120.0
+
+
+def test_every_provider_has_rate_limit_advice():
+    for name in llm.PROVIDERS:
+        if name.startswith("Custom"):
+            continue
+        assert name in llm.RATE_LIMIT_ADVICE

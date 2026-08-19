@@ -92,6 +92,20 @@ Ask "what was median revenue for Paid in Q3?" and it computes the exact figure a
 you the SQL. Every query it runs is displayed beneath the answer and recorded in the
 lineage. Errors are returned to the model so it can correct itself rather than failing.
 
+### Rate limits
+
+The analyst spends **one request per tool round**, so a single question costs several
+requests against a per-minute quota. On a tight free tier that matters more than the
+per-request price.
+
+When a 429 arrives the loop waits out the delay the provider itself specifies and retries,
+rather than failing; only an exhausted retry budget surfaces as an error, and that message
+names the quota and what to do about it. The round ceiling is capped at 6, and the agent is
+instructed to batch lookups into as few queries as it can.
+
+If you keep hitting limits: switch to a lighter model, move to **Groq** (a much more
+generous free tier for this workload), or run **Ollama** locally, which has no limit at all.
+
 ### Choosing a provider
 
 The analyst talks to any OpenAI-compatible chat-completions endpoint, so the provider is a
@@ -193,7 +207,7 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 161 tests
+python -m pytest tests -q          # 172 tests
 ```
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
@@ -223,7 +237,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  161 tests
+tests/                  172 tests
 legacy/                 the original MVP, still runnable
 ```
 

@@ -201,3 +201,58 @@ def suggest_replacement(error: Exception | str) -> str | None:
     candidate = match.group(1).rstrip(".,'\")").strip()
     # Guard against grabbing a stray word rather than an id.
     return candidate if any(ch.isdigit() or ch in ".-:" for ch in candidate) else None
+
+
+# ---------------------------------------------------------------- rate limits
+
+
+_RETRY_DELAY_PATTERNS = (
+    re.compile(r"retry in ([0-9]+(?:\.[0-9]+)?)\s*s", re.IGNORECASE),
+    re.compile(r"'retryDelay':\s*'([0-9]+(?:\.[0-9]+)?)s'"),
+    re.compile(r"retry[- ]after[\"':\s]+([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE),
+)
+
+
+def is_rate_limited(error: Exception | str) -> bool:
+    message = str(error)
+    return "429" in message or "RESOURCE_EXHAUSTED" in message or "rate limit" in message.lower() \
+        or "quota" in message.lower()
+
+
+def parse_retry_delay(error: Exception | str, default: float = 30.0) -> float:
+    """Seconds to wait, taken from the provider's own advice where given."""
+    message = str(error)
+    for pattern in _RETRY_DELAY_PATTERNS:
+        match = pattern.search(message)
+        if match:
+            return min(float(match.group(1)) + 1.0, 120.0)
+    return default
+
+
+def parse_quota_limit(error: Exception | str) -> str | None:
+    """The quota figure the provider quotes, for an honest error message."""
+    match = re.search(r"limit:\s*(\d+)", str(error))
+    return match.group(1) if match else None
+
+
+# Free tiers are metered per minute, and one analyst question costs one request
+# per tool round — so a 5/min ceiling is roughly one question. These notes are
+# guidance rather than a contract; providers change quotas without warning.
+RATE_LIMIT_ADVICE: dict[str, str] = {
+    "Google Gemini": (
+        "Free-tier limits are per-model and per-minute, and the larger models are the "
+        "tightest. If you are hitting them, try a lighter model (names containing "
+        "'flash-lite' or 'flash' rather than 'pro') — use List models to see what your "
+        "key can reach. Groq's free tier is considerably more generous for this workload."
+    ),
+    "Groq": (
+        "Generous free tier, typically tens of requests per minute plus a daily budget. "
+        "A good fit for an agent that makes several calls per question."
+    ),
+    "OpenRouter": (
+        "Free model quotas are shared and vary through the day. Adding a small credit "
+        "balance raises them substantially."
+    ),
+    "Ollama (local)": "No rate limit at all — it runs on your machine.",
+    "OpenAI": "Limits scale with account tier and spend.",
+}

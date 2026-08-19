@@ -642,6 +642,13 @@ with tabs[4]:
         provider = llm.PROVIDERS[provider_name]
         if provider.note:
             (st.success if provider.free else st.info)(provider.note)
+        advice = llm.RATE_LIMIT_ADVICE.get(provider_name)
+        if advice:
+            st.caption(f"**Rate limits.** {advice}")
+        st.caption(
+            "The analyst spends one request per tool round, so a single question can cost "
+            "several requests against a per-minute quota."
+        )
         if provider.signup_url:
             st.caption(f"Get a key: {provider.signup_url}")
 
@@ -755,6 +762,21 @@ with tabs[4]:
                         if st.button("Pin answer to report"):
                             pin("text", text=answer.text, title=question)
                 except Exception as exc:
+                    if llm.is_rate_limited(exc):
+                        quota = llm.parse_quota_limit(exc)
+                        wait = llm.parse_retry_delay(exc)
+                        st.error(
+                            f"Out of quota on `{model_name}`"
+                            + (f" — the free tier allows {quota} requests/minute." if quota else ".")
+                            + f" Retry in about {wait:.0f}s."
+                        )
+                        st.info(
+                            "**Options:** wait it out · switch to a lighter model "
+                            "(use *List models* above) · switch provider to **Groq**, whose free "
+                            "tier is far more generous · or run **Ollama** locally for no limit "
+                            "at all."
+                        )
+                        st.stop()
                     replacement = llm.suggest_replacement(exc)
                     if replacement:
                         st.error(

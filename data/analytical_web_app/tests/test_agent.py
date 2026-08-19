@@ -1,5 +1,6 @@
 """The agent's tools — exercised without a model, which is the point of the split."""
 import pandas as pd
+import pytest
 
 from groundtruth.agent import TOOL_SCHEMAS, ToolBox, ask, ask_stream
 
@@ -248,3 +249,75 @@ def test_output_only_fields_are_not_sent_back():
     payload = _assistant_message(_Message())
     assert "annotations" not in payload and "reasoning_content" not in payload
     assert payload["content"] == "hi"
+
+
+# ---------------- rate-limit resilience ----------------
+
+
+class _RateLimited:
+    """Fails with 429 a fixed number of times, then succeeds."""
+
+    def __init__(self, failures: int):
+        self.failures, self.calls = failures, 0
+        self.chat = self
+
+    @property
+    def completions(self):
+        return self
+
+    def create(self, **kwargs):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise RuntimeError(
+                "Error code: 429 - RESOURCE_EXHAUSTED. Quota exceeded, limit: 5. "
+                "Please retry in 2s."
+            )
+        return "response"
+
+
+def test_rate_limits_are_waited_out():
+    from groundtruth.agent import _create_with_retry
+
+    client = _RateLimited(failures=2)
+    waits: list[float] = []
+    result = _create_with_retry(
+        client, on_wait=lambda d, a, t: waits.append(d), sleep=lambda d: None,
+        model="m", messages=[],
+    )
+    assert result == "response"
+    assert client.calls == 3
+    assert waits == [3.0, 3.0]  # the provider's 2s plus a second of headroom
+
+
+def test_retries_are_bounded():
+    from groundtruth.agent import _create_with_retry
+
+    client = _RateLimited(failures=99)
+    with pytest.raises(RuntimeError, match="429"):
+        _create_with_retry(client, retries=2, sleep=lambda d: None, model="m", messages=[])
+    assert client.calls == 3  # the first attempt plus two retries
+
+
+def test_non_rate_limit_errors_are_not_retried():
+    from groundtruth.agent import _create_with_retry
+
+    class _Broken:
+        calls = 0
+        chat = property(lambda s: s)
+        completions = property(lambda s: s)
+
+        def create(self, **kwargs):
+            type(self).calls += 1
+            raise RuntimeError("Error code: 401 - invalid api key")
+
+    client = _Broken()
+    with pytest.raises(RuntimeError, match="401"):
+        _create_with_retry(client, sleep=lambda d: None, model="m", messages=[])
+    assert _Broken.calls == 1
+
+
+def test_tool_rounds_are_capped_to_limit_request_spend():
+    """Each round costs one metered request, so the ceiling matters on a free tier."""
+    from groundtruth.agent import MAX_TOOL_ROUNDS
+
+    assert MAX_TOOL_ROUNDS <= 6

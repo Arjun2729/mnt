@@ -17,7 +17,7 @@ from .security import SecurityError
 from .semantic import DatasetSpec
 from .store import Store
 
-MAX_TOOL_ROUNDS = 8
+MAX_TOOL_ROUNDS = 6  # each round is one metered request
 MAX_ROWS_RETURNED = 200
 
 SYSTEM_PROMPT = """You are a careful data analyst working over a SQL table in DuckDB.
@@ -29,7 +29,9 @@ Rules:
 - If a question is ambiguous, state the interpretation you chose, then answer it.
 - Distinguish what the data shows from what you infer. Do not claim causation from correlation.
 - If the data cannot answer the question, say so plainly and say what would be needed.
-- Prefer a few well-chosen aggregate queries over many small ones.
+- Prefer a few well-chosen aggregate queries over many small ones. Each call costs
+  rate-limit budget, so combine what you need into as few queries as possible.
+- Batch independent lookups into one SQL statement rather than issuing several.
 - When a result is best seen as a picture, call make_chart after computing it.
 - Be concise. Lead with the answer, then the supporting numbers."""
 
@@ -261,6 +263,32 @@ def _finalise_slot(slot: dict) -> dict:
     return call
 
 
+def _create_with_retry(client, on_wait=None, retries: int = 2, sleep=None, **kwargs):
+    """Call the provider, waiting out rate limits rather than failing on them.
+
+    Free tiers meter per minute and this loop spends one request per tool round,
+    so a 429 mid-conversation is ordinary rather than exceptional. The provider
+    states how long to wait; we honour it instead of guessing.
+    """
+    import time as _time
+
+    from . import llm
+
+    pause = sleep or _time.sleep
+    attempt = 0
+    while True:
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            if attempt >= retries or not llm.is_rate_limited(exc):
+                raise
+            delay = llm.parse_retry_delay(exc)
+            attempt += 1
+            if on_wait:
+                on_wait(delay, attempt, retries)
+            pause(delay)
+
+
 def ask(
     client: Any,
     model: str,
@@ -269,6 +297,7 @@ def ask(
     history: list[dict] | None = None,
     max_rounds: int = MAX_TOOL_ROUNDS,
     on_tool: Callable[[ToolCall], None] | None = None,
+    on_wait: Callable[[float, int, int], None] | None = None,
 ) -> AgentAnswer:
     """Run the tool loop against an OpenAI-compatible chat completions client."""
     schema_hint = json.dumps(toolbox.spec.to_prompt_json() | {"table": toolbox.view}, default=str)
@@ -280,8 +309,9 @@ def ask(
 
     calls: list[ToolCall] = []
     for round_index in range(max_rounds):
-        response = client.chat.completions.create(
-            model=model, messages=messages, tools=TOOL_SCHEMAS, tool_choice="auto", temperature=0
+        response = _create_with_retry(
+            client, on_wait=on_wait,
+            model=model, messages=messages, tools=TOOL_SCHEMAS, tool_choice="auto", temperature=0,
         )
         message = response.choices[0].message
         if not getattr(message, "tool_calls", None):
@@ -323,6 +353,7 @@ def ask_stream(
     toolbox: ToolBox,
     history: list[dict] | None = None,
     max_rounds: int = MAX_TOOL_ROUNDS,
+    on_wait: Callable[[float, int, int], None] | None = None,
 ):
     """Streaming variant of `ask`, yielding events as they happen.
 
@@ -340,7 +371,8 @@ def ask_stream(
     calls: list[ToolCall] = []
 
     for round_index in range(max_rounds):
-        stream = client.chat.completions.create(
+        stream = _create_with_retry(
+            client, on_wait=on_wait,
             model=model, messages=messages, tools=TOOL_SCHEMAS,
             tool_choice="auto", temperature=0, stream=True,
         )
