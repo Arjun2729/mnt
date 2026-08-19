@@ -141,6 +141,27 @@ CSS = """
 }
 .gt-finding-detail { font-size: 0.84rem; color: var(--gt-muted); line-height: 1.55; }
 
+/* ---------- wordmark as a link ---------- */
+
+.gt-home {
+  font-family: var(--gt-cond); font-size: 1.15rem; font-weight: 700;
+  letter-spacing: -0.01em; color: var(--gt-accent) !important;
+  text-decoration: none !important; display: inline-block; line-height: 1.1;
+}
+.gt-home:hover { opacity: 0.75; }
+.gt-home-sub {
+  font-family: var(--gt-mono); font-size: 0.66rem; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--gt-muted); margin-bottom: 0.9rem;
+}
+
+/* ---------- the rule behind a result ---------- */
+
+.gt-rule {
+  font-family: var(--gt-mono); font-size: 0.66rem; line-height: 1.6;
+  color: var(--gt-muted); border-left: 2px solid var(--gt-rule);
+  padding: 0.15rem 0 0.15rem 0.6rem; margin: 0.35rem 0 0;
+}
+
 /* ---------- state pills ---------- */
 
 .gt-pill {
@@ -335,3 +356,18 @@ def live_badge(text: str) -> None:
 def hint(text_html: str) -> None:
     """A dashed affordance strip — used to advertise chart selection."""
     st.markdown(f'<div class="gt-hint">{text_html}</div>', unsafe_allow_html=True)
+
+
+def home_link() -> None:
+    """The wordmark, as a link back to the start screen."""
+    st.markdown(
+        '<a href="?view=home" target="_self" class="gt-home" '
+        'title="Back to the start screen">◆ Groundtruth</a>'
+        '<div class="gt-home-sub">Traceable analytics</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def methodology_note(text: str) -> None:
+    """Says which rule produced a result, so the reader can judge it."""
+    st.markdown(f'<div class="gt-rule">{html.escape(text)}</div>', unsafe_allow_html=True)

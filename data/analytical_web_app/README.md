@@ -62,6 +62,39 @@ Motion is used where it carries meaning: tiles rise in a short stagger on load,
 cards lift under the pointer, and the cross-filter badge pulses while a selection
 is driving the rest of the app. All of it respects `prefers-reduced-motion`.
 
+## What it decides for you
+
+Answers are computed from the data you load. The analyst runs SQL and shows it; nothing is
+precomputed, and there is no special handling for the bundled sample.
+
+But **the thresholds that decide what counts as a finding are choices, not discoveries** —
+a "finding" is a rule firing. Burying those rules in the source would let this look more
+adaptive than it is, so all seventeen live in `groundtruth/settings.py`, each carrying the
+reason it holds that value and whether it came from convention or judgement:
+
+| Example | Default | Basis |
+|---|---|---|
+| Correlation worth reporting | \|r\| ≥ 0.6 | convention — no principled cutoff exists |
+| Outlier distance | 3 × IQR | textbook (Tukey, 1977) |
+| Significance level | α = 0.05 | convention (Fisher), and arbitrary |
+| Trend worth reporting | 25% drift | judgement — not a significance test |
+
+They are adjustable at runtime under **Methodology** in the sidebar, and every finding
+prints the rule that produced it alongside the observed value:
+
+```
+channel = Paid averages +208% on cost
+  Rule: robust z >= 1.3 and gap >= 10.0% (observed z=8.10)
+```
+
+Raising the correlation floor to 0.9 drops the weaker pairs and keeps r=0.94 — the settings
+are load-bearing, and there are tests asserting so.
+
+**Still fixed, and worth knowing:** forecasting uses a single ARIMA(1,1,1) specification
+rather than searching model space; the model leaderboard is a shortlist of three families;
+and seasonal period lengths assume a standard calendar (monthly = 12), which is wrong for
+retail and fiscal calendars.
+
 ## Architecture
 
 Six layers. Data flows down; nothing above L1 keeps its own copy.

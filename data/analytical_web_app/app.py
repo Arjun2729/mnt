@@ -33,6 +33,7 @@ from groundtruth.provenance import Provenance
 from groundtruth.report import Report, render_excel, render_html
 from groundtruth.security import SecurityError
 from groundtruth.semantic import profile, profile_frame, profile_with_distributions
+from groundtruth.settings import GROUPS, KNOBS, Settings
 from groundtruth.store import Store
 
 # Credentials from .env before any provider default is resolved.
@@ -52,23 +53,43 @@ def html_escape(text: str) -> str:
 
 
 def session():
-    if "store" not in st.session_state:
-        st.session_state.store = Store()
-        st.session_state.provenance = Provenance()
-        st.session_state.report = Report("Analysis Report")
-        st.session_state.alert_store = AlertStore(os.getenv("GT_ALERT_STATE", "alert_state.json"))
-        st.session_state.rules = []
-        st.session_state.active = None
-        st.session_state.spec = None
-        st.session_state.groups = [{"combinator": "AND", "conditions": []}]
-        st.session_state.root_combinator = "AND"
-        st.session_state.chat = []
-        st.session_state.saved_views = {}
-        st.session_state.insights = []
+    """Ensure every key exists, independently.
+
+    An all-or-nothing guard (`if "store" not in session_state`) silently skips
+    keys added later, so a session opened before a new feature raises
+    AttributeError on it. Defaulting per key makes adding state safe for sessions
+    that are already running.
+    """
+    defaults = {
+        "store": Store,
+        "provenance": Provenance,
+        "report": lambda: Report("Analysis Report"),
+        "alert_store": lambda: AlertStore(os.getenv("GT_ALERT_STATE", "alert_state.json")),
+        "settings": Settings,
+        "rules": list,
+        "active": lambda: None,
+        "spec": lambda: None,
+        "groups": lambda: [{"combinator": "AND", "conditions": []}],
+        "root_combinator": lambda: "AND",
+        "chat": list,
+        "saved_views": dict,
+        "insights": list,
+    }
+    for key, factory in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = factory()
     return st.session_state
 
 
 S = session()
+
+# The wordmark links to ?view=home; clearing the selection returns to the start
+# screen and gives the browser's back button something to move between.
+if st.query_params.get("view") == "home" and S.active:
+    S.active = None
+    S.insights = []
+    st.query_params.clear()
+    st.rerun()
 
 
 def refresh_spec() -> None:
@@ -141,13 +162,7 @@ def apply_cross_filter(conditions: list[dict], origin: str) -> None:
 
 
 with st.sidebar:
-    st.markdown(
-        '<div class="gt-mark" style="font-size:1.15rem;margin-bottom:.15rem">◆ Groundtruth</div>'
-        '<div style="font-family:var(--gt-mono);font-size:.66rem;letter-spacing:.09em;'
-        'text-transform:uppercase;color:var(--gt-muted);margin-bottom:.9rem">'
-        'Traceable analytics</div>',
-        unsafe_allow_html=True,
-    )
+    theme.home_link()
 
     with st.expander("Data source", expanded=not S.active):
         kind = st.radio("Source", ["Upload", "File path", "Database", "API"], horizontal=True, label_visibility="collapsed")
@@ -219,19 +234,74 @@ with st.sidebar:
 
 if not S.active:
     theme.hero()
-    columns = st.columns(3, gap="large")
-    with columns[0]:
-        theme.feature("01 / ASK", "The analyst computes",
-                      "It runs real SQL against your data and shows the query behind every number, "
-                      "rather than estimating from a sample of rows.")
-    with columns[1]:
-        theme.feature("02 / FILTER", "Nesting costs nothing",
-                      "Conditions compile to parameterised SQL, so (A AND B) OR C is as cheap as a "
-                      "single clause — and means the same thing in every tab.")
-    with columns[2]:
-        theme.feature("03 / TRACE", "Keep the lineage",
-                      "Every load, filter, question and model is logged, and exports as a Python "
-                      "script that reproduces the session.")
+
+    start, detail = st.columns([2, 3], gap="large")
+
+    with start:
+        theme.label("Start here")
+        sample = Path("sample_data.csv")
+        if sample.exists():
+            rows = sum(1 for _ in sample.open()) - 1
+            st.caption(f"Included sample — {rows:,} rows of monthly revenue across regions and channels.")
+            if st.button("Load the sample dataset", type="primary", width="stretch"):
+                result = connectors.load_path(S.store, str(sample), "sample_data")
+                S.active = result.dataset.name
+                S.provenance.record("load", f"Loaded {sample.name} ({result.dataset.rows:,} rows)",
+                                    path=str(sample), rows=result.dataset.rows)
+                refresh_spec()
+                st.rerun()
+
+        uploaded = st.file_uploader("Or upload your own", type=connectors.SUPPORTED_UPLOAD_TYPES,
+                                    label_visibility="visible")
+        if uploaded is not None:
+            try:
+                result = connectors.load_upload(S.store, uploaded)
+                S.active = result.dataset.name
+                S.provenance.record("load", f"Loaded {uploaded.name} ({result.dataset.rows:,} rows)",
+                                    path=uploaded.name, rows=result.dataset.rows)
+                refresh_spec()
+                st.rerun()
+            except Exception as exc:
+                st.error(f"{type(exc).__name__}: {exc}")
+
+        st.caption("Databases and JSON APIs are in the sidebar.")
+
+        if S.store.datasets:
+            theme.label("Already loaded")
+            for name, dataset in S.store.datasets.items():
+                if st.button(f"{name} · {dataset.rows:,} rows", key=f"reopen_{name}", width="stretch"):
+                    S.active = name
+                    refresh_spec()
+                    st.rerun()
+
+    with detail:
+        theme.label("What this does, and does not, decide for you")
+        st.markdown(
+            "Answers are computed from the data you load — the analyst runs SQL and shows it, "
+            "and nothing is precomputed for the sample. But **the thresholds that decide what "
+            "counts as a finding are choices**, not discoveries."
+        )
+        rows = []
+        for knob in KNOBS:
+            rows.append({
+                "Setting": knob.label,
+                "Default": knob.default,
+                "Basis": "convention" if knob.is_convention else "judgement",
+                "Why this value": knob.rationale,
+            })
+        st.dataframe(
+            pd.DataFrame(rows), width="stretch", hide_index=True, height=300,
+            column_config={
+                "Setting": st.column_config.TextColumn(width="medium"),
+                "Default": st.column_config.NumberColumn(width="small"),
+                "Basis": st.column_config.TextColumn(width="small"),
+                "Why this value": st.column_config.TextColumn(width="large"),
+            },
+        )
+        st.caption(
+            "Every one of these is adjustable once a dataset is loaded, under **Methodology** "
+            "in the sidebar, and each finding states the rule that produced it."
+        )
     st.stop()
 
 if S.spec is None:
@@ -320,6 +390,31 @@ with st.sidebar:
         if st.button("Clear filters", width="stretch"):
             S.groups = [{"combinator": "AND", "conditions": []}]
             st.rerun()
+
+    st.markdown("---")
+    theme.label("Methodology")
+    st.caption("Every threshold this app applies. Change one and the results change with it.")
+    with st.expander("Thresholds", expanded=False):
+        current = S.settings.to_dict()
+        for group in GROUPS:
+            st.markdown(f"**{group}**")
+            for knob in [k for k in KNOBS if k.group == group]:
+                value = st.slider(
+                    knob.label, float(knob.minimum), float(knob.maximum),
+                    float(current[knob.key]), float(knob.step), key=f"knob_{knob.key}",
+                    help=f"{knob.rationale}\n\nBasis: {knob.source}",
+                )
+                setattr(S.settings, knob.key, type(getattr(S.settings, knob.key))(value))
+        changed = S.settings.changed_from_default()
+        if changed:
+            st.caption(f"{len(changed)} setting(s) moved from their defaults.")
+            if st.button("Reset to defaults", width="stretch"):
+                S.settings = Settings()
+                for knob in KNOBS:
+                    st.session_state.pop(f"knob_{knob.key}", None)
+                st.rerun()
+        else:
+            st.caption("All at their documented defaults.")
 
     st.markdown("---")
     name_for_view = st.text_input("Save this filter as", placeholder="Q4 paid channels")
@@ -416,7 +511,7 @@ with tabs[0]:
         sync_view()
         with st.spinner("Scanning…"):
             scan_spec = profile(S.store, FILTERED_VIEW)
-            S.insights = insights.scan(S.store, FILTERED_VIEW, scan_spec)
+            S.insights = insights.scan(S.store, FILTERED_VIEW, scan_spec, settings=S.settings)
         S.provenance.record("scan", f"Insight scan surfaced {len(S.insights)} findings")
 
     if not S.insights:
@@ -434,6 +529,8 @@ with tabs[0]:
         for index, item in enumerate(S.insights):
             with st.container(border=True):
                 theme.finding(item.headline, item.detail, item.kind, item.severity)
+                if item.rule:
+                    theme.methodology_note(f"Rule: {item.rule}")
                 controls = st.columns([1, 1, 8], gap="small")
                 show_evidence = controls[0].button("Evidence", key=f"ev_{index}", width="stretch") if item.evidence_sql else False
                 if controls[1].button("Pin", key=f"pin_{index}", width="stretch"):
@@ -882,7 +979,7 @@ with tabs[5]:
             x = columns[0].selectbox("X", spec.measures, key="corr_x")
             y = columns[1].selectbox("Y", spec.measures, index=min(1, len(spec.measures) - 1), key="corr_y")
             method = columns[2].selectbox("Method", ["pearson", "spearman"])
-            result = stats.correlation(data, x, y, method) if st.button("Run", type="primary") else None
+            result = stats.correlation(data, x, y, method, alpha=S.settings.alpha) if st.button("Run", type="primary") else None
         elif test_name == "Compare groups (t-test / ANOVA)":
             columns = st.columns(2)
             value = columns[0].selectbox("Measure", spec.measures, key="grp_val")
@@ -941,7 +1038,12 @@ with tabs[6]:
     if st.button("Train", type="primary"):
         try:
             with st.spinner("Cross-validating candidates…"):
-                result = ml.train(data, target, features, problem, test_size=test_size)
+                result = ml.train(
+                    data, target, features, problem, test_size=test_size,
+                    cv_folds=int(S.settings.cv_folds),
+                    leakage_correlation=S.settings.leakage_correlation,
+                    forest_trees=int(S.settings.forest_trees),
+                )
 
             for warning in result.leakage_warnings:
                 st.warning(f"Possible leakage — {warning}")
@@ -1039,7 +1141,12 @@ with tabs[7]:
             with anomaly_tab:
                 sensitivity = st.slider("Sensitivity (σ)", 1.5, 5.0, 3.0, 0.5)
                 found = timeseries.anomalies(series, grain, sensitivity)
-                changepoints = timeseries.detect_changepoints(series)
+                changepoints = timeseries.detect_changepoints(
+                    series,
+                    min_segment=int(S.settings.changepoint_min_segment),
+                    max_points=int(S.settings.changepoint_max),
+                    threshold=S.settings.changepoint_threshold,
+                )
                 if found.empty:
                     st.success("No anomalous periods at this sensitivity.")
                 else:

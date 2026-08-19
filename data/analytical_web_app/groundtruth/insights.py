@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from .semantic import DatasetSpec
+from .settings import DEFAULTS, Settings
 from .store import Store, quote_ident
 
 
@@ -24,27 +25,32 @@ class Insight:
     severity: str = "info"  # info | notable | warning
     evidence_sql: str = ""
     score: float = 0.0
+    # The rule that produced this finding. A finding is a threshold firing; saying
+    # which one lets the reader judge it rather than take it on faith.
+    rule: str = ""
 
 
 def _q(name: str) -> str:
     return quote_ident(name)
 
 
-def scan(store: Store, table: str, spec: DatasetSpec, max_insights: int = 12) -> list[Insight]:
+def scan(store: Store, table: str, spec: DatasetSpec, max_insights: int = 12,
+         settings: Settings | None = None) -> list[Insight]:
+    settings = settings or DEFAULTS
     findings: list[Insight] = []
-    findings += _data_quality(store, table, spec)
-    findings += _correlations(store, table, spec)
-    findings += _segment_outliers(store, table, spec)
-    findings += _time_movement(store, table, spec)
-    findings += _distribution_outliers(store, table, spec)
+    findings += _data_quality(store, table, spec, settings)
+    findings += _correlations(store, table, spec, settings)
+    findings += _segment_outliers(store, table, spec, settings)
+    findings += _time_movement(store, table, spec, settings)
+    findings += _distribution_outliers(store, table, spec, settings)
     findings.sort(key=lambda i: i.score, reverse=True)
     return findings[:max_insights]
 
 
-def _data_quality(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
+def _data_quality(store: Store, table: str, spec: DatasetSpec, settings: Settings) -> list[Insight]:
     out: list[Insight] = []
     for column in spec.columns:
-        if column.missing_pct >= 20:
+        if column.missing_pct >= settings.missing_warn:
             out.append(
                 Insight(
                     "quality",
@@ -54,6 +60,7 @@ def _data_quality(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
                     "warning",
                     f"SELECT COUNT(*) FROM {_q(table)} WHERE {_q(column.name)} IS NULL",
                     score=column.missing_pct / 10,
+                    rule=f"missing >= {settings.missing_warn}%",
                 )
             )
         if column.distinct == 1 and spec.rows > 1:
@@ -76,7 +83,7 @@ def _data_quality(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
     return out
 
 
-def _correlations(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
+def _correlations(store: Store, table: str, spec: DatasetSpec, settings: Settings) -> list[Insight]:
     measures = spec.measures
     if len(measures) < 2:
         return []
@@ -90,7 +97,7 @@ def _correlations(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
                 continue
             seen.add(frozenset((x, y)))
             r = matrix.loc[x, y]
-            if pd.isna(r) or abs(r) < 0.6:
+            if pd.isna(r) or abs(r) < settings.correlation_floor:
                 continue
             direction = "rise together" if r > 0 else "move in opposite directions"
             out.append(
@@ -102,12 +109,13 @@ def _correlations(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
                     "notable" if abs(r) >= 0.8 else "info",
                     f"SELECT corr({_q(x)}, {_q(y)}) FROM {_q(table)}",
                     score=abs(r) * 4,
+                    rule=f"|r| >= {settings.correlation_floor}",
                 )
             )
     return out
 
 
-def _segment_outliers(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
+def _segment_outliers(store: Store, table: str, spec: DatasetSpec, settings: Settings) -> list[Insight]:
     """Group means that sit far from the overall mean."""
     out: list[Insight] = []
     for dimension in spec.dimensions[:4]:
@@ -137,7 +145,7 @@ def _segment_outliers(store: Store, table: str, spec: DatasetSpec) -> list[Insig
             # A robust scale makes tiny spreads produce large z-scores, so also
             # require the gap to be material. Statistically unusual is not the
             # same as worth reading.
-            if abs(extreme["z"]) < 1.3 or abs(delta) < 10:
+            if abs(extreme["z"]) < settings.segment_z or abs(delta) < settings.segment_min_delta:
                 continue
             out.append(
                 Insight(
@@ -148,12 +156,14 @@ def _segment_outliers(store: Store, table: str, spec: DatasetSpec) -> list[Insig
                     "notable" if abs(extreme["z"]) > 1.8 else "info",
                     f"SELECT {_q(dimension)}, AVG({_q(measure)}) FROM {_q(table)} GROUP BY 1 ORDER BY 2 DESC",
                     score=abs(extreme["z"]) * 2,
+                    rule=f"robust z >= {settings.segment_z} and gap >= {settings.segment_min_delta}%"
+                         f" (observed z={extreme['z']:.2f})",
                 )
             )
     return out
 
 
-def _time_movement(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
+def _time_movement(store: Store, table: str, spec: DatasetSpec, settings: Settings) -> list[Insight]:
     if not spec.time_column or not spec.measures:
         return []
     grain = spec.time_grain or "month"
@@ -170,7 +180,7 @@ def _time_movement(store: Store, table: str, spec: DatasetSpec) -> list[Insight]
         # Overall drift, measured as a share of the mean level.
         slope = np.polyfit(np.arange(len(values)), values, 1)[0]
         level = float(np.mean(values))
-        if level and abs(slope * len(values)) / abs(level) > 0.25:
+        if level and abs(slope * len(values)) / abs(level) > settings.trend_drift / 100:
             direction = "rising" if slope > 0 else "falling"
             out.append(
                 Insight(
@@ -181,6 +191,7 @@ def _time_movement(store: Store, table: str, spec: DatasetSpec) -> list[Insight]
                     "notable",
                     f"SELECT date_trunc('{grain}', {_q(spec.time_column)}), SUM({_q(measure)}) FROM {_q(table)} GROUP BY 1 ORDER BY 1",
                     score=min(abs(slope * len(values)) / abs(level) * 6, 9),
+                    rule=f"total drift >= {settings.trend_drift}% of mean level (no significance test)",
                 )
             )
 
@@ -189,7 +200,7 @@ def _time_movement(store: Store, table: str, spec: DatasetSpec) -> list[Insight]
         if len(deltas) and np.std(deltas):
             index = int(np.argmax(np.abs(deltas)))
             z = abs(deltas[index]) / np.std(deltas)
-            if z > 2.2:
+            if z > settings.movement_z:
                 period = pd.to_datetime(frame["period"].iloc[index + 1])
                 pct = deltas[index] / abs(values[index]) * 100 if values[index] else 0
                 out.append(
@@ -200,12 +211,13 @@ def _time_movement(store: Store, table: str, spec: DatasetSpec) -> list[Insight]
                         "notable",
                         f"SELECT date_trunc('{grain}', {_q(spec.time_column)}), SUM({_q(measure)}) FROM {_q(table)} GROUP BY 1 ORDER BY 1",
                         score=z * 1.6,
+                        rule=f"change z >= {settings.movement_z} (observed {z:.1f})",
                     )
                 )
     return out
 
 
-def _distribution_outliers(store: Store, table: str, spec: DatasetSpec) -> list[Insight]:
+def _distribution_outliers(store: Store, table: str, spec: DatasetSpec, settings: Settings) -> list[Insight]:
     out: list[Insight] = []
     for measure in spec.measures[:5]:
         stats = store.sql(
@@ -215,9 +227,9 @@ def _distribution_outliers(store: Store, table: str, spec: DatasetSpec) -> list[
         iqr = q3 - q1
         if iqr <= 0:
             continue
-        low, high = q1 - 3 * iqr, q3 + 3 * iqr
+        low, high = q1 - settings.outlier_iqr * iqr, q3 + settings.outlier_iqr * iqr
         count = store.count(table, f"{_q(measure)} < ? OR {_q(measure)} > ?", [low, high])
-        if count and count / max(spec.rows, 1) > 0.005:
+        if count and count / max(spec.rows, 1) > settings.outlier_min_share / 100:
             out.append(
                 Insight(
                     "outlier",
@@ -227,10 +239,15 @@ def _distribution_outliers(store: Store, table: str, spec: DatasetSpec) -> list[
                     "warning" if count / spec.rows > 0.05 else "info",
                     f"SELECT * FROM {_q(table)} WHERE {_q(measure)} < {low} OR {_q(measure)} > {high}",
                     score=min(count / spec.rows * 30, 6),
+                    rule=f"beyond {settings.outlier_iqr}x IQR and >= {settings.outlier_min_share}% of rows",
                 )
             )
     return out
 
 
 def insights_frame(findings: list[Insight]) -> pd.DataFrame:
-    return pd.DataFrame([{"severity": f.severity, "kind": f.kind, "finding": f.headline, "detail": f.detail} for f in findings])
+    return pd.DataFrame([
+        {"severity": f.severity, "kind": f.kind, "finding": f.headline,
+         "detail": f.detail, "rule": f.rule}
+        for f in findings
+    ])

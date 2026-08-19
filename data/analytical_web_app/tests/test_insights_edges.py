@@ -79,7 +79,7 @@ def test_scan_respects_its_cap(blank, store, spec):
 def test_findings_render_as_a_table():
     found = [Insight("trend", "head", "detail", "notable")]
     table = insights_frame(found)
-    assert list(table.columns) == ["severity", "kind", "finding", "detail"]
+    assert list(table.columns) == ["severity", "kind", "finding", "detail", "rule"]
     assert table.iloc[0]["finding"] == "head"
 
 

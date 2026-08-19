@@ -112,3 +112,17 @@ def test_every_custom_class_used_by_helpers_is_defined(captured):
     used = set(re.findall(r'class="(gt-[\w-]+)"', emitted))
     for name in used:
         assert f".{name}" in theme.CSS, f"{name} is emitted but never styled"
+
+
+def test_home_link_targets_the_start_screen(captured):
+    """The wordmark is a real link, so it creates browser history."""
+    theme.home_link()
+    assert '?view=home' in captured[0]
+    assert 'target="_self"' in captured[0]
+    assert "gt-home" in captured[0]
+
+
+def test_methodology_note_states_the_rule(captured):
+    theme.methodology_note("Rule: |r| >= 0.6")
+    assert "gt-rule" in captured[0]
+    assert "|r| &gt;= 0.6" in captured[0]      # escaped, not injected

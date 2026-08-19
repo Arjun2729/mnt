@@ -74,7 +74,8 @@ def infer_problem_type(target: pd.Series) -> str:
     return REGRESSION
 
 
-def detect_leakage(df: pd.DataFrame, target: str, features: list[str], problem_type: str) -> list[str]:
+def detect_leakage(df: pd.DataFrame, target: str, features: list[str], problem_type: str,
+                   correlation_cutoff: float = 0.995) -> list[str]:
     """Flag features that all but contain the answer."""
     warnings_found: list[str] = []
     y = df[target]
@@ -87,7 +88,7 @@ def detect_leakage(df: pd.DataFrame, target: str, features: list[str], problem_t
             pair = pd.concat([column, y], axis=1).replace([np.inf, -np.inf], np.nan).dropna()
             if len(pair) > 3:
                 r = pair.corr().iloc[0, 1]
-                if pd.notna(r) and abs(r) > 0.995:
+                if pd.notna(r) and abs(r) > correlation_cutoff:
                     warnings_found.append(f"{feature}: correlates {r:.4f} with the target — likely derived from it")
         # Not `dtype == object`: pandas gives string columns a `str` dtype now, and
         # that comparison silently disabled this check.
@@ -123,15 +124,15 @@ def _build_preprocessor(X: pd.DataFrame, scale: bool = False) -> ColumnTransform
     return ColumnTransformer(steps, remainder="drop", verbose_feature_names_out=False)
 
 
-def _candidates(problem_type: str, seed: int) -> dict[str, object]:
+def _candidates(problem_type: str, seed: int, trees: int = 300) -> dict[str, object]:
     if problem_type == CLASSIFICATION:
         return {
-            "Random forest": RandomForestClassifier(n_estimators=300, random_state=seed, class_weight="balanced_subsample", n_jobs=-1),
+            "Random forest": RandomForestClassifier(n_estimators=trees, random_state=seed, class_weight="balanced_subsample", n_jobs=-1),
             "Gradient boosting": HistGradientBoostingClassifier(random_state=seed),
             "Logistic regression": LogisticRegression(max_iter=2000, random_state=seed),
         }
     return {
-        "Random forest": RandomForestRegressor(n_estimators=300, random_state=seed, n_jobs=-1),
+        "Random forest": RandomForestRegressor(n_estimators=trees, random_state=seed, n_jobs=-1),
         "Gradient boosting": HistGradientBoostingRegressor(random_state=seed),
         "Ridge regression": Ridge(random_state=seed),
     }
@@ -146,6 +147,8 @@ def train(
     cv_folds: int = 5,
     seed: int = 42,
     compute_importance: bool = True,
+    leakage_correlation: float = 0.995,
+    forest_trees: int = 300,
 ) -> ModelResult:
     if not features:
         raise ValueError("Select at least one feature.")
@@ -171,7 +174,7 @@ def train(
         if y.nunique() < 2:
             raise ValueError("The target needs at least two classes with 2+ examples each.")
 
-    leakage = detect_leakage(data, target, features, resolved)
+    leakage = detect_leakage(data, target, features, resolved, leakage_correlation)
 
     stratify = y if resolved == CLASSIFICATION and y.value_counts().min() >= 2 else None
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=stratify)
@@ -196,7 +199,7 @@ def train(
 
     leaderboard: list[LeaderboardEntry] = []
     best_name, best_score, best_pipeline = "", -np.inf, None
-    for name, estimator in _candidates(resolved, seed).items():
+    for name, estimator in _candidates(resolved, seed, forest_trees).items():
         needs_scaling = name in ("Logistic regression", "Ridge regression")
         pipeline = Pipeline([("preprocess", _build_preprocessor(X_train, scale=needs_scaling)), ("model", estimator)])
         try:

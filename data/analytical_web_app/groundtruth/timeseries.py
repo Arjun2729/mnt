@@ -78,7 +78,8 @@ def decompose(series: pd.Series, grain: str = "month") -> Decomposition:
     return Decomposition(clean, result.trend, result.seasonal, result.resid, seasonal_strength, trend_strength, caveat)
 
 
-def detect_changepoints(series: pd.Series, min_segment: int = 4, max_points: int = 5, threshold: float = 2.5) -> list[pd.Timestamp]:
+def detect_changepoints(series: pd.Series, min_segment: int = 4, max_points: int = 5,
+                        threshold: float = 2.5) -> list[pd.Timestamp]:
     """Binary segmentation on mean shift, scored against within-segment noise."""
     values = series.interpolate().dropna()
     if len(values) < min_segment * 2:
