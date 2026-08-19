@@ -5,6 +5,9 @@ venv/
 env/
 
 # Python
+.coverage
+coverage.xml
+htmlcov/
 __pycache__/
 *.py[cod]
 *.egg-info/

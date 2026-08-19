@@ -13,3 +13,5 @@ playwright>=1.40,<2
 
 # Reliable file watching, so edits to groundtruth/ reload without a restart.
 watchdog>=4.0,<7
+
+# Coverage is enforced at 100% (statements and branches) in pyproject.toml.

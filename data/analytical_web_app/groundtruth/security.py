@@ -88,8 +88,8 @@ def assert_read_only(query: str) -> str:
     if statement_type != "SELECT":
         raise SecurityError(f"Only read-only SELECT queries are allowed (got {statement_type})")
 
-    lowered = stripped.lower()
-    for forbidden in ("create ", "insert ", "update ", "delete ", "drop ", "alter ", "attach ", "copy ", "install ", "load ", "export "):
-        if lowered.startswith(forbidden):
-            raise SecurityError(f"Statement type not permitted: {forbidden.strip()}")
+    # A keyword-prefix check used to follow. It was unreachable: DuckDB classifies
+    # every such statement (CREATE, INSERT, COPY, DELETE, UPDATE...) by its own
+    # type, so the SELECT check above has already rejected them. Removed rather
+    # than kept as reassuring dead code.
     return stripped

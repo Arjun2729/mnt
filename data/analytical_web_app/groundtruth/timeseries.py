@@ -40,7 +40,11 @@ class Forecast:
 def aggregate(df: pd.DataFrame, time_column: str, value_column: str, grain: str = "month", how: str = "sum") -> pd.Series:
     """Collapse to one observation per period — the shape every model here expects."""
     frame = df[[time_column, value_column]].copy()
-    frame[time_column] = pd.to_datetime(frame[time_column], errors="coerce")
+    with warnings.catch_warnings():
+        # Mixed or unrecognised formats are expected here — that is why the parse
+        # coerces rather than raises. Pandas' fallback notice is not actionable.
+        warnings.simplefilter("ignore", UserWarning)
+        frame[time_column] = pd.to_datetime(frame[time_column], errors="coerce")
     frame = frame.dropna(subset=[time_column])
     if frame.empty:
         raise ValueError("No valid timestamps in the selected column.")
@@ -89,10 +93,16 @@ def detect_changepoints(series: pd.Series, min_segment: int = 4, max_points: int
         best_score, best_index = 0.0, -1
         for i in range(min_segment, len(window) - min_segment):
             left, right = window[:i], window[i:]
+            gap = abs(left.mean() - right.mean())
             spread = np.sqrt((left.var() + right.var()) / 2)
             if spread <= 0:
-                continue
-            score = abs(left.mean() - right.mean()) / spread
+                # No within-segment variation. Differing means is perfect
+                # separation — the strongest changepoint there is, not one to skip.
+                if gap <= 0:
+                    continue
+                score = float("inf")
+            else:
+                score = gap / spread
             if score > best_score:
                 best_score, best_index = score, i
         if best_index > 0 and best_score >= threshold:

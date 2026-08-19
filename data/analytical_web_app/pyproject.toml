@@ -1,0 +1,13 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["groundtruth"]
+branch = true
+
+[tool.coverage.report]
+# The suite covers every line; a drop should fail the build rather than pass quietly.
+fail_under = 100
+show_missing = true
+skip_covered = true

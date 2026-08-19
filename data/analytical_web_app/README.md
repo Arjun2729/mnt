@@ -222,13 +222,20 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q                                  # 246 tests
+python -m pytest tests -q                                  # 496 tests
 python -m pytest tests --cov=groundtruth --cov-report=term-missing
 ```
 
-Coverage is **88%** of the library. The uncovered remainder is mostly `theme.py`
-(presentation, exercised only through the running app) and network paths that would need a
-live provider or a remote database.
+Coverage is **100% of the library, statements and branches**, enforced by
+`fail_under = 100` in `pyproject.toml` so a regression fails the build rather than passing
+quietly. Network boundaries are stubbed at `requests` and at the model client, so the suite
+needs no API key and makes no outbound calls.
+
+Reaching it was worth more than the number: chasing the last uncovered lines exposed a
+NaN p-value that silently blanked the correlation scan, a leakage check disabled by a dtype
+comparison, a changepoint detector that could not see a perfect step, and a segment scan
+whose scale the outlier itself inflated. One unreachable branch turned out to be dead code
+and was removed rather than tested.
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
 constructed data with known answers, the agent loop against a scripted fake client, `test_integration.py`
@@ -257,7 +264,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  246 tests
+tests/                  496 tests, 100% coverage
 legacy/                 the original MVP, still runnable
 ```
 
