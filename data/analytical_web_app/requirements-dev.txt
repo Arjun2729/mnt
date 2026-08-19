@@ -1,0 +1,11 @@
+-r requirements.txt
+
+# Test suite
+pytest>=8.0,<9
+
+# Visual verification: drives real Chrome to screenshot the running app.
+# Headless Chrome's --virtual-time-budget fast-forwards the clock, which stops
+# Streamlit's websocket from connecting, so it only ever captures the loading
+# skeleton. Playwright waits on real time instead.
+# Uses your installed Chrome via channel="chrome" — no browser download needed.
+playwright>=1.40,<2

@@ -1,0 +1,33 @@
+# Virtual environments — these are ~900MB and rebuild from requirements.txt
+.venv/
+.vnv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets and runtime state
+.env
+*.key
+alert_state.json
+alerts.json
+
+# Generated artefacts
+report.html
+reproduce.py
+lineage.json
+*.duckdb
+*.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

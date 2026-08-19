@@ -1,0 +1,85 @@
+[server]
+maxUploadSize = 500
+
+[browser]
+gatherUsageStats = false
+
+# ----------------------------------------------------------------------------
+# Groundtruth visual identity.
+# A cool datasheet palette with a deep teal accent, set in IBM Plex: condensed
+# for headings, sans for body, mono for the data and identifiers. The same
+# system the architecture documentation uses.
+# ----------------------------------------------------------------------------
+
+[theme]
+base = "light"
+font = "IBM Plex Sans, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+headingFont = "IBM Plex Sans Condensed, IBM Plex Sans, Helvetica Neue, sans-serif"
+codeFont = "IBM Plex Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
+baseFontSize = 15
+baseRadius = "0.35rem"
+buttonRadius = "0.3rem"
+showWidgetBorder = true
+showSidebarBorder = true
+metricValueFontSize = "1.65rem"
+metricValueFontWeight = 600
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+
+# Charts inherit the same categorical ramp the Plotly figures use.
+chartCategoricalColors = ["#0B6A72", "#C2691B", "#3E6BA8", "#6B8F3E", "#8A4F8C", "#B4474C", "#4E7F8C", "#9A7B33"]
+chartSequentialColors = ["#EAF3F4", "#CDE3E5", "#A9CFD3", "#7FB7BD", "#549CA5", "#2D818C", "#0B6A72", "#075158", "#04383D"]
+chartDivergingColors = ["#7B3A10", "#A75C1E", "#C98C51", "#E3C29A", "#F2EDE6", "#B7D4D7", "#7FB2B8", "#3F8C95", "#0B6A72"]
+
+[theme.light]
+backgroundColor = "#F7F9FA"
+secondaryBackgroundColor = "#ECF1F4"
+textColor = "#101820"
+primaryColor = "#0E7C86"
+linkColor = "#0A626B"
+borderColor = "#D5DEE5"
+dataframeBorderColor = "#D5DEE5"
+dataframeHeaderBackgroundColor = "#E7EDF1"
+codeBackgroundColor = "#ECF1F4"
+codeTextColor = "#0A4F56"
+grayColor = "#5C6A76"
+greenColor = "#2F6B4F"
+greenBackgroundColor = "#E2F0E8"
+redColor = "#A8353B"
+redBackgroundColor = "#F8E7E8"
+orangeColor = "#A65B10"
+orangeBackgroundColor = "#FAEEDE"
+blueColor = "#3E6BA8"
+blueBackgroundColor = "#E7EEF7"
+
+[theme.light.sidebar]
+backgroundColor = "#EEF3F6"
+secondaryBackgroundColor = "#E2EAEF"
+borderColor = "#D2DCE3"
+codeBackgroundColor = "#E2EAEF"
+
+[theme.dark]
+backgroundColor = "#0D1219"
+secondaryBackgroundColor = "#161F29"
+textColor = "#E3EBF2"
+primaryColor = "#4EC5CD"
+linkColor = "#4EC5CD"
+borderColor = "#25313C"
+dataframeBorderColor = "#25313C"
+dataframeHeaderBackgroundColor = "#1B2732"
+codeBackgroundColor = "#161F29"
+codeTextColor = "#8FD9DF"
+grayColor = "#8695A2"
+greenColor = "#6FBF8F"
+greenBackgroundColor = "#132E1F"
+redColor = "#E0797F"
+redBackgroundColor = "#2E1618"
+orangeColor = "#D9944A"
+orangeBackgroundColor = "#2F2311"
+blueColor = "#7FA8DC"
+blueBackgroundColor = "#16202E"
+
+[theme.dark.sidebar]
+backgroundColor = "#0A1015"
+secondaryBackgroundColor = "#141D26"
+borderColor = "#212C36"
+codeBackgroundColor = "#141D26"

@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Average revenue above target",
+    "column": "revenue",
+    "aggregation": "mean",
+    "operator": ">",
+    "threshold": 120000,
+    "kind": "threshold",
+    "cooldown_minutes": 60,
+    "enabled": true
+  },
+  {
+    "name": "Revenue outside its forecast band",
+    "column": "revenue",
+    "kind": "anomaly",
+    "sensitivity": 3.0,
+    "cooldown_minutes": 180,
+    "enabled": true
+  }
+]
