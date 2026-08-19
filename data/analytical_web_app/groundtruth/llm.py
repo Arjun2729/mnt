@@ -242,8 +242,29 @@ def parse_retry_delay(error: Exception | str, default: float = 30.0) -> float:
 
 def parse_quota_limit(error: Exception | str) -> str | None:
     """The quota figure the provider quotes, for an honest error message."""
-    match = re.search(r"limit:\s*(\d+)", str(error))
+    message = str(error)
+    match = re.search(r"limit:\s*(\d+)", message) or re.search(r"'quotaValue':\s*'?(\d+)", message)
     return match.group(1) if match else None
+
+
+def parse_quota_scope(error: Exception | str) -> str | None:
+    """Whether an exhausted quota is per-minute or per-day.
+
+    The distinction decides whether waiting helps. A daily quota still reports a
+    short retryDelay, so retrying on that advice burns attempts against a budget
+    that will not refill for hours.
+    """
+    message = str(error)
+    if re.search(r"PerDay|per[-_ ]?day|daily", message, re.IGNORECASE):
+        return "day"
+    if re.search(r"PerMinute|per[-_ ]?minute", message, re.IGNORECASE):
+        return "minute"
+    return None
+
+
+def is_retryable_rate_limit(error: Exception | str) -> bool:
+    """Only a per-minute ceiling is worth waiting out."""
+    return is_rate_limited(error) and parse_quota_scope(error) != "day"
 
 
 # Free tiers are metered per minute, and one analyst question costs one request
@@ -251,9 +272,11 @@ def parse_quota_limit(error: Exception | str) -> str | None:
 # guidance rather than a contract; providers change quotas without warning.
 RATE_LIMIT_ADVICE: dict[str, str] = {
     "Google Gemini": (
-        "Quotas are per-model and per-minute, and the flagship models are the tightest — "
-        "gemini-3.6-flash allows only 5 requests/minute, which one question can exhaust. "
-        "The **-lite** models are far more generous and are what this app defaults to."
+        "The free tier is metered **per day as well as per minute**, and the daily budget is "
+        "the binding one: measured on a free key, gemini-2.5-flash-lite allows 20 requests "
+        "per day. Since the analyst spends one request per tool round, that is roughly four "
+        "to six questions in total. Workable for a look around; not for real use. "
+        "**Groq's free tier is the better choice here**, or run Ollama locally."
     ),
     "Groq": (
         "Generous free tier, typically tens of requests per minute plus a daily budget. "

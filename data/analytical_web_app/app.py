@@ -774,18 +774,30 @@ with tabs[4]:
                 except Exception as exc:
                     if llm.is_rate_limited(exc):
                         quota = llm.parse_quota_limit(exc)
-                        wait = llm.parse_retry_delay(exc)
-                        st.error(
-                            f"Out of quota on `{model_name}`"
-                            + (f" — the free tier allows {quota} requests/minute." if quota else ".")
-                            + f" Retry in about {wait:.0f}s."
-                        )
-                        st.info(
-                            "**Options:** wait it out · switch to a lighter model "
-                            "(use *List models* above) · switch provider to **Groq**, whose free "
-                            "tier is far more generous · or run **Ollama** locally for no limit "
-                            "at all."
-                        )
+                        scope = llm.parse_quota_scope(exc)
+                        if scope == "day":
+                            st.error(
+                                f"Daily free-tier quota exhausted on `{model_name}`"
+                                + (f" — {quota} requests per day." if quota else ".")
+                                + " Waiting will not help; it resets on the provider's daily cycle."
+                            )
+                            st.info(
+                                "**Switch provider.** A daily budget this small is a few questions "
+                                "at most, because each question costs one request per tool round. "
+                                "**Groq**'s free tier is far larger, and **Ollama** runs locally "
+                                "with no quota at all."
+                            )
+                        else:
+                            wait = llm.parse_retry_delay(exc)
+                            st.error(
+                                f"Rate limited on `{model_name}`"
+                                + (f" — {quota} requests/minute." if quota else ".")
+                                + f" Retry in about {wait:.0f}s."
+                            )
+                            st.info(
+                                "**Options:** wait it out · pick a lighter model above · "
+                                "switch to **Groq** · or run **Ollama** locally."
+                            )
                         st.stop()
                     replacement = llm.suggest_replacement(exc)
                     if replacement:

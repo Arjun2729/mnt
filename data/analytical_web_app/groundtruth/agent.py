@@ -305,7 +305,8 @@ def _create_with_retry(client, on_wait=None, retries: int = 2, sleep=None, **kwa
         try:
             return client.chat.completions.create(**kwargs)
         except Exception as exc:
-            if attempt >= retries or not llm.is_rate_limited(exc):
+            # A daily quota reports a short retryDelay too, but waiting cannot help.
+            if attempt >= retries or not llm.is_retryable_rate_limit(exc):
                 raise
             delay = llm.parse_retry_delay(exc)
             attempt += 1

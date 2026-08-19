@@ -103,11 +103,17 @@ rather than failing; only an exhausted retry budget surfaces as an error, and th
 names the quota and what to do about it. The round ceiling is capped at 6, and the agent is
 instructed to batch lookups into as few queries as it can.
 
-Gemini's quotas are **per model**, and the flagship models are the tightest: measured on a
-free key, `gemini-3.6-flash` allows 5 requests/minute — roughly one question — while
-`gemini-2.5-flash-lite` absorbed a 14-request burst without throttling. The default is
-therefore a **-lite** model, and the Analyst tab offers one-click quick-picks between the
-variants verified to support tool calling.
+Gemini's free tier meters **per day as well as per minute**, and the daily budget is the
+binding one. Measured on a free key: `gemini-3.6-flash` allows 5 requests/minute, and
+`gemini-2.5-flash-lite` allows **20 requests per day** — which at one request per tool
+round is roughly four to six questions in total. Enough to look around; not enough to work.
+
+**For real use, pick Groq or Ollama.** Gemini remains the default because it is the
+quickest key to obtain, but the Analyst tab says plainly what the budget is.
+
+The two limits need different handling, so the app distinguishes them: a per-minute ceiling
+is waited out and retried, while a daily exhaustion is reported immediately — it reports a
+short `retryDelay` too, but waiting cannot help.
 
 Keys are per-provider: pasting a Groq key while "Google Gemini" is selected sends it to
 Google and gets a 401. Change the provider first — the endpoint changes with it.
@@ -123,8 +129,8 @@ method**, and is the default.
 
 | Provider | Free | Get a key |
 |---|---|---|
-| **Google Gemini** (default, `gemini-2.5-flash-lite`) | yes | https://aistudio.google.com/apikey |
-| Groq | yes | https://console.groq.com/keys |
+| **Google Gemini** (default) | yes, but only ~20 requests/day | https://aistudio.google.com/apikey |
+| **Groq** — recommended for real use | yes, far larger budget | https://console.groq.com/keys |
 | OpenRouter | models ending `:free` | https://openrouter.ai/keys |
 | Ollama | yes, runs locally | https://ollama.com/download |
 | OpenAI | no, billing required | https://platform.openai.com/api-keys |
@@ -216,7 +222,7 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 177 tests
+python -m pytest tests -q          # 183 tests
 ```
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
@@ -246,7 +252,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  177 tests
+tests/                  183 tests
 legacy/                 the original MVP, still runnable
 ```
 

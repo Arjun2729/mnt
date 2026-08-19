@@ -144,3 +144,50 @@ def test_every_provider_has_rate_limit_advice():
         if name.startswith("Custom"):
             continue
         assert name in llm.RATE_LIMIT_ADVICE
+
+
+# ---------------- per-day versus per-minute quotas ----------------
+#
+# Gemini's free tier meters both. A daily exhaustion still reports a short
+# retryDelay, so treating every 429 as retryable burns attempts against a budget
+# that will not refill for hours.
+
+
+DAILY_429 = (
+    "Error code: 429 - [{'error': {'code': 429, 'message': 'You exceeded your current quota', "
+    "'status': 'RESOURCE_EXHAUSTED', 'details': [{'violations': [{'quotaId': "
+    "'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaValue': '20'}]}, "
+    "{'retryDelay': '13s'}]}}]"
+)
+
+MINUTE_429 = (
+    "Error code: 429 - Quota exceeded, limit: 5. quotaId: "
+    "'GenerateRequestsPerMinutePerProjectPerModel-FreeTier'. Please retry in 52s."
+)
+
+
+def test_daily_quota_is_identified():
+    assert llm.parse_quota_scope(DAILY_429) == "day"
+    assert llm.parse_quota_limit(DAILY_429) == "20"
+
+
+def test_per_minute_quota_is_identified():
+    assert llm.parse_quota_scope(MINUTE_429) == "minute"
+    assert llm.parse_quota_limit(MINUTE_429) == "5"
+
+
+def test_only_per_minute_limits_are_worth_retrying():
+    assert llm.is_retryable_rate_limit(MINUTE_429) is True
+    assert llm.is_retryable_rate_limit(DAILY_429) is False
+
+
+def test_both_are_still_rate_limits():
+    assert llm.is_rate_limited(DAILY_429) and llm.is_rate_limited(MINUTE_429)
+
+
+def test_unknown_scope_defaults_to_retryable():
+    assert llm.is_retryable_rate_limit("429 too many requests") is True
+
+
+def test_non_rate_limit_is_never_retryable():
+    assert llm.is_retryable_rate_limit("401 unauthorized") is False
