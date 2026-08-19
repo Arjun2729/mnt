@@ -109,7 +109,7 @@ method**, and is the default.
 ```bash
 export LLM_PROVIDER="Google Gemini"
 export GEMINI_API_KEY="..."
-export LLM_MODEL="gemini-2.0-flash"
+export LLM_MODEL="gemini-3.6-flash"
 ```
 
 Or just pick a provider and paste the key in the Analyst tab. Three buttons there check the

@@ -69,3 +69,42 @@ def test_connection_failure_is_reported_not_raised():
         llm.PROVIDERS["Custom (OpenAI-compatible)"], "k", "m", "http://127.0.0.1:1/v1"
     )
     assert ok is False and message
+
+
+# ---------------- model retirement ----------------
+
+
+def test_retirement_message_yields_the_replacement():
+    """Providers name the successor in the 404; read it back rather than guessing."""
+    error = (
+        "Error code: 404 - [{'error': {'code': 404, 'message': 'This model "
+        "models/gemini-2.0-flash is no longer available. Please update your code to use "
+        "models/gemini-3.6-flash for the latest features and improvements.', "
+        "'status': 'NOT_FOUND'}}]"
+    )
+    assert llm.suggest_replacement(error) == "gemini-3.6-flash"
+
+
+def test_models_prefix_is_stripped():
+    assert llm.suggest_replacement(
+        "model is no longer available, please use models/foo-2.1-pro"
+    ) == "foo-2.1-pro"
+
+
+@pytest.mark.parametrize("message", [
+    "Connection refused",
+    "Error code: 401 - invalid api key",
+    "Error code: 429 - rate limit exceeded",
+    "",
+])
+def test_unrelated_errors_suggest_nothing(message):
+    assert llm.suggest_replacement(message) is None
+
+
+def test_exception_objects_are_accepted():
+    exc = RuntimeError("This model is no longer available. Please use models/x-9.9-flash")
+    assert llm.suggest_replacement(exc) == "x-9.9-flash"
+
+
+def test_deprecation_wording_is_also_handled():
+    assert llm.suggest_replacement("model deprecated; switch to gemini-9.9-pro") == "gemini-9.9-pro"

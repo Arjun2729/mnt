@@ -661,6 +661,11 @@ with tabs[4]:
         if checks[0].button("Test connection", width="stretch"):
             ok, message = llm.check_connection(provider, api_key, model_name, base_url)
             (st.success if ok else st.error)(message)
+            if not ok:
+                replacement = llm.suggest_replacement(message)
+                if replacement and st.button(f"Use {replacement} instead", type="primary"):
+                    st.session_state[f"model_{provider_name}"] = replacement
+                    st.rerun()
         if checks[1].button("Check tool calling", width="stretch"):
             ok, message = llm.supports_tools(provider, api_key, model_name, base_url)
             (st.success if ok else st.warning)(message)
@@ -746,7 +751,21 @@ with tabs[4]:
                         if st.button("Pin answer to report"):
                             pin("text", text=answer.text, title=question)
                 except Exception as exc:
-                    st.error(f"{type(exc).__name__}: {exc}")
+                    replacement = llm.suggest_replacement(exc)
+                    if replacement:
+                        st.error(
+                            f"`{model_name}` has been retired by {provider_name}. "
+                            f"It suggests **{replacement}**."
+                        )
+                        if st.button(f"Switch to {replacement}", type="primary"):
+                            st.session_state[f"model_{provider_name}"] = replacement
+                            st.rerun()
+                    else:
+                        st.error(f"{type(exc).__name__}: {exc}")
+                        st.caption(
+                            "If this is a model-name problem, use **List models** above to see "
+                            "what your key can reach."
+                        )
 
 
 # ---------------------------------------------------------------- statistics

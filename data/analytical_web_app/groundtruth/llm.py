@@ -11,6 +11,7 @@ nothing about who built it.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 
 
@@ -31,12 +32,14 @@ PROVIDERS: dict[str, Provider] = {
     "Google Gemini": Provider(
         name="Google Gemini",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        default_model="gemini-2.0-flash",
+        default_model="gemini-3.6-flash",
         key_env="GEMINI_API_KEY",
         signup_url="https://aistudio.google.com/apikey",
         free=True,
         note="Free tier with no payment method required. Supports tool calling and streaming.",
-        suggested_models=("gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"),
+        # Google retires model ids fairly aggressively. If one 404s, the error names its
+        # replacement and `list_models` reports what the key can actually reach today.
+        suggested_models=("gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash"),
     ),
     "Groq": Provider(
         name="Groq",
@@ -139,6 +142,9 @@ def check_connection(provider: Provider, api_key: str, model: str, base_url: str
         reply = (response.choices[0].message.content or "").strip()
         return True, f"Connected to {model} — replied {reply!r}"
     except Exception as exc:
+        replacement = suggest_replacement(exc)
+        if replacement:
+            return False, f"{model} is retired. The provider suggests {replacement} — switch the model and retry."
         return False, f"{type(exc).__name__}: {exc}"
 
 
@@ -167,3 +173,31 @@ def supports_tools(provider: Provider, api_key: str, model: str, base_url: str |
         )
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
+
+
+# ---------------------------------------------------------------- model drift
+
+
+_RETIRED_PATTERN = re.compile(
+    r"(?:use|try|switch to|updated? to)\s+(?:models/)?([A-Za-z0-9][\w.:-]{2,})",
+    re.IGNORECASE,
+)
+
+
+def suggest_replacement(error: Exception | str) -> str | None:
+    """Pull the replacement model id out of a provider's retirement message.
+
+    Providers retire model ids on their own schedule and usually name the successor
+    in the 404 body ("...is no longer available. Please update your code to use
+    models/x"). Reading it back beats making the user guess.
+    """
+    message = str(error)
+    if "no longer available" not in message.lower() and "not found" not in message.lower() \
+            and "deprecat" not in message.lower():
+        return None
+    match = _RETIRED_PATTERN.search(message)
+    if not match:
+        return None
+    candidate = match.group(1).rstrip(".,'\")").strip()
+    # Guard against grabbing a stray word rather than an id.
+    return candidate if any(ch.isdigit() or ch in ".-:" for ch in candidate) else None
