@@ -55,12 +55,16 @@ PROVIDERS: dict[str, Provider] = {
     "Groq": Provider(
         name="Groq",
         base_url="https://api.groq.com/openai/v1",
-        default_model="llama-3.3-70b-versatile",
+        # Verified against a live free key: these three call tools correctly.
+        # Groq rotates its catalogue, so use "List models" if one 404s.
+        default_model="openai/gpt-oss-120b",
         key_env="GROQ_API_KEY",
         signup_url="https://console.groq.com/keys",
         free=True,
-        note="Free tier, unusually fast. Tool-calling support varies by model.",
-        suggested_models=("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-20b"),
+        note="Free tier, unusually fast, and generous enough for an agent that spends "
+             "several requests per question. Tool-calling support varies by model — "
+             "`groq/compound` does not support it.",
+        suggested_models=("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"),
     ),
     "OpenRouter": Provider(
         name="OpenRouter",
@@ -161,7 +165,10 @@ def check_connection(provider: Provider, api_key: str, model: str, base_url: str
             max_tokens=10,
         )
         reply = (response.choices[0].message.content or "").strip()
-        return True, f"Connected to {model} — replied {reply!r}"
+        # Reasoning models can spend a small token budget before emitting text, so
+        # an empty body still means the endpoint, key and model are all working.
+        detail = f"replied {reply!r}" if reply else "responded (no text within the token budget)"
+        return True, f"Connected to {model} — {detail}"
     except Exception as exc:
         replacement = suggest_replacement(exc)
         if replacement:

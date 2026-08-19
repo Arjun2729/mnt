@@ -10,7 +10,9 @@ def test_env_model_applies_to_its_own_provider(monkeypatch):
 def test_env_model_does_not_follow_to_another_provider(monkeypatch):
     """A Gemini id sent to Groq is simply wrong."""
     monkeypatch.setenv("LLM_MODEL", "gemini-2.5-flash-lite")
-    assert llm.resolve_model(llm.PROVIDERS["Groq"], use_env=False) == "llama-3.3-70b-versatile"
+    groq = llm.PROVIDERS["Groq"]
+    assert llm.resolve_model(groq, use_env=False) == groq.default_model
+    assert "gemini" not in llm.resolve_model(groq, use_env=False)
 
 
 def test_openai_model_variable_is_still_honoured(monkeypatch):

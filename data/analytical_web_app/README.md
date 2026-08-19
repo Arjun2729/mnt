@@ -108,8 +108,15 @@ binding one. Measured on a free key: `gemini-3.6-flash` allows 5 requests/minute
 `gemini-2.5-flash-lite` allows **20 requests per day** — which at one request per tool
 round is roughly four to six questions in total. Enough to look around; not enough to work.
 
-**For real use, pick Groq or Ollama.** Gemini remains the default because it is the
-quickest key to obtain, but the Analyst tab says plainly what the budget is.
+**Groq is the default.** Its free tier comfortably carries an agent that spends several
+requests per question, and the whole loop is verified against it end to end — a
+multi-round question with SQL and a significance test, and a chart-generating question,
+both answered correctly through the running UI.
+
+Model ids move under you. `openai/gpt-oss-120b`, `openai/gpt-oss-20b` and
+`qwen/qwen3.6-27b` were confirmed to support tool calling on a live free key;
+`groq/compound` does not. If one 404s, **List models** asks the endpoint what your key can
+reach rather than trusting a name baked into this repo.
 
 The two limits need different handling, so the app distinguishes them: a per-minute ceiling
 is waited out and retried, while a daily exhaustion is reported immediately — it reports a
@@ -129,8 +136,8 @@ method**, and is the default.
 
 | Provider | Free | Get a key |
 |---|---|---|
-| **Google Gemini** (default) | yes, but only ~20 requests/day | https://aistudio.google.com/apikey |
-| **Groq** — recommended for real use | yes, far larger budget | https://console.groq.com/keys |
+| Google Gemini | free, but only ~20 requests/day | https://aistudio.google.com/apikey |
+| **Groq** (default) | free, far larger budget | https://console.groq.com/keys |
 | OpenRouter | models ending `:free` | https://openrouter.ai/keys |
 | Ollama | yes, runs locally | https://ollama.com/download |
 | OpenAI | no, billing required | https://platform.openai.com/api-keys |

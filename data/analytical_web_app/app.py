@@ -642,7 +642,10 @@ with tabs[4]:
     theme.label("Analyst")
     st.caption("Given SQL, chart and statistics tools over the filtered view. It computes answers rather than estimating them.")
 
-    with st.expander("Model provider", expanded=not S.chat):
+    # Stay out of the way when the environment already supplies a key — there is
+    # nothing to configure, and an open panel pushes the conversation off-screen.
+    already_configured = bool(llm.resolve_key(llm.resolve_provider()))
+    with st.expander("Model provider", expanded=not S.chat and not already_configured):
         names = list(llm.PROVIDERS)
         # Honour LLM_PROVIDER from the environment on first render; the widget's own
         # state takes over once the user has chosen.
