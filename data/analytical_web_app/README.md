@@ -128,6 +128,11 @@ endpoint what your key can actually reach).
 The tool layer is provider-independent — `ToolBox` executes calls and knows nothing about
 the model, which is why the whole loop is tested offline against a scripted fake client.
 
+Provider messages are echoed back as the provider produced them rather than rebuilt field
+by field. Some vendors attach data the conversation must carry unchanged — Gemini 3.x
+returns a `thought_signature` on every function call and rejects the next request without
+it — and reconstructing the message silently drops anything outside the OpenAI schema.
+
 ## Security
 
 Three boundaries, all enforced in `groundtruth/security.py`:
@@ -188,7 +193,7 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 157 tests
+python -m pytest tests -q          # 161 tests
 ```
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
@@ -218,7 +223,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  157 tests
+tests/                  161 tests
 legacy/                 the original MVP, still runnable
 ```
 

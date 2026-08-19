@@ -1,7 +1,7 @@
 """The agent's tools — exercised without a model, which is the point of the split."""
 import pandas as pd
 
-from groundtruth.agent import TOOL_SCHEMAS, ToolBox, ask
+from groundtruth.agent import TOOL_SCHEMAS, ToolBox, ask, ask_stream
 
 
 def toolbox(store, spec):
@@ -123,3 +123,128 @@ def test_tool_loop_stops_at_the_round_limit(store, spec):
     answer = ask(_FakeClient(looping), "fake-model", "loop forever", toolbox(store, spec), max_rounds=3)
     assert answer.rounds == 3
     assert "tool-call limit" in answer.text
+
+
+# ---------------- vendor fields must survive the loop ----------------
+#
+# Gemini 3.x attaches a thought_signature to every functionCall and rejects the
+# next request if it is missing. Rebuilding the assistant message field by field
+# dropped it, producing a 400 on the second round of any tool conversation.
+
+
+THOUGHT_SIGNATURE = "Cs8BAVKV5xQ"
+
+
+def _fragment_with_signature():
+    from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+
+    return ChoiceDeltaToolCall.construct(
+        index=0, id="call_1", type="function",
+        function={"name": "describe_columns", "arguments": "{}"},
+        extra_content={"google": {"thought_signature": THOUGHT_SIGNATURE}},
+    )
+
+
+class _StrictProvider:
+    """Rejects a follow-up whose tool calls lost their thought_signature."""
+
+    def __init__(self):
+        self.round = 0
+        self.sent: list[list[dict]] = []
+        self.chat = self
+
+    @property
+    def completions(self):
+        return self
+
+    def create(self, **kwargs):
+        self.round += 1
+        self.sent.append(kwargs["messages"])
+        if self.round > 1:
+            for message in kwargs["messages"]:
+                for call in message.get("tool_calls") or []:
+                    signature = (call.get("extra_content") or {}).get("google", {}).get("thought_signature")
+                    if not signature:
+                        raise RuntimeError(
+                            "Error code: 400 - Function call is missing a thought_signature "
+                            "in functionCall parts."
+                        )
+
+        class _Delta:
+            def __init__(self, content=None, tool_calls=None):
+                self.content, self.tool_calls = content, tool_calls
+
+        class _Choice:
+            def __init__(self, delta):
+                self.delta = delta
+
+        class _Chunk:
+            def __init__(self, delta):
+                self.choices = [_Choice(delta)]
+
+        if self.round == 1:
+            return iter([_Chunk(_Delta(tool_calls=[_fragment_with_signature()]))])
+        return iter([_Chunk(_Delta(content="The dataset has 7 columns."))])
+
+    def echoed_tool_calls(self) -> list[dict]:
+        return [
+            call
+            for turn in self.sent
+            for message in turn
+            if message.get("role") == "assistant"
+            for call in message.get("tool_calls") or []
+        ]
+
+
+def test_thought_signature_survives_the_streamed_loop(store, spec):
+    provider = _StrictProvider()
+    answer = None
+    for kind, payload in ask_stream(provider, "gemini-3.6-flash", "how many columns?", toolbox(store, spec)):
+        if kind == "done":
+            answer = payload
+
+    assert answer is not None
+    assert answer.text == "The dataset has 7 columns."
+    assert provider.round == 2, "the follow-up round must have been accepted"
+
+    echoed = provider.echoed_tool_calls()
+    assert echoed, "the assistant turn must be echoed back with its tool calls"
+    assert echoed[0]["extra_content"]["google"]["thought_signature"] == THOUGHT_SIGNATURE
+
+
+def test_streamed_arguments_still_concatenate_across_fragments(store, spec):
+    """Preserving extra fields must not break the piecewise arguments."""
+    from groundtruth.agent import _finalise_slot, _merge_fragment
+    from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+
+    pending: dict = {}
+    _merge_fragment(pending, ChoiceDeltaToolCall.construct(
+        index=0, id="c1", type="function", function={"name": "run_sql", "arguments": '{"query":'}))
+    _merge_fragment(pending, ChoiceDeltaToolCall.construct(
+        index=0, function={"arguments": ' "SELECT 1"}'}))
+
+    call = _finalise_slot(pending[0])
+    assert call["function"]["name"] == "run_sql"
+    assert call["function"]["arguments"] == '{"query": "SELECT 1"}'
+    assert call["id"] == "c1"
+
+
+def test_empty_arguments_default_to_an_object(store, spec):
+    from groundtruth.agent import _finalise_slot
+
+    call = _finalise_slot({"id": "c1", "function": {"name": "describe_columns", "arguments": ""}})
+    assert call["function"]["arguments"] == "{}"
+    assert call["type"] == "function"
+
+
+def test_output_only_fields_are_not_sent_back():
+    """Some providers reject their own output fields on input."""
+    from groundtruth.agent import _assistant_message
+
+    class _Message:
+        def model_dump(self, exclude_none=True):
+            return {"role": "assistant", "content": "hi", "annotations": [], "reasoning_content": "x"}
+
+    payload = _assistant_message(_Message())
+    assert "annotations" not in payload and "reasoning_content" not in payload
+    assert payload["content"] == "hi"

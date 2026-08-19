@@ -199,6 +199,68 @@ class ToolBox:
             return ToolCall(name, arguments, "", error=f"{type(exc).__name__}: {exc}")
 
 
+# ---------------------------------------------------------------- message plumbing
+#
+# Providers attach fields to tool calls that the conversation must carry back
+# unchanged. Gemini 3.x returns a `thought_signature` on each functionCall and
+# rejects the next request if it is missing. Rebuilding messages field by field
+# silently drops anything not in the OpenAI schema, so everything is preserved
+# by dumping the provider's own objects instead.
+
+
+def _dump(obj) -> dict:
+    """Full dict for an SDK model, including vendor-specific extra fields."""
+    if obj is None:
+        return {}
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(exclude_none=True)
+    if isinstance(obj, dict):
+        return {k: v for k, v in obj.items() if v is not None}
+    # Plain objects (and test doubles) expose their fields on __dict__.
+    attributes = getattr(obj, "__dict__", None)
+    if attributes is not None:
+        return {k: v for k, v in attributes.items() if not k.startswith("_") and v is not None}
+    return {}
+
+
+def _assistant_message(message) -> dict:
+    """The assistant turn as the provider produced it, safe to send back."""
+    payload = _dump(message)
+    payload["role"] = "assistant"
+    # Fields that are outputs only; some providers reject them on input.
+    for key in ("annotations", "audio", "function_call", "reasoning_content"):
+        payload.pop(key, None)
+    return payload
+
+
+def _merge_fragment(pending: dict[int, dict], fragment) -> None:
+    """Accumulate one streamed tool-call delta, preserving unknown keys."""
+    dump = _dump(fragment)
+    index = dump.pop("index", 0)
+    slot = pending.setdefault(index, {"function": {"name": "", "arguments": ""}})
+
+    function = dump.pop("function", None) or {}
+    target = slot.setdefault("function", {"name": "", "arguments": ""})
+    # Arguments arrive in pieces; every other field is sent once.
+    target["arguments"] = (target.get("arguments") or "") + (function.get("arguments") or "")
+    for key, value in function.items():
+        if key != "arguments" and value not in (None, ""):
+            target[key] = value
+
+    for key, value in dump.items():
+        if value not in (None, ""):
+            slot[key] = value
+
+
+def _finalise_slot(slot: dict) -> dict:
+    call = dict(slot)
+    call.setdefault("type", "function")
+    function = dict(call.get("function") or {})
+    function["arguments"] = function.get("arguments") or "{}"
+    call["function"] = function
+    return call
+
+
 def ask(
     client: Any,
     model: str,
@@ -225,16 +287,10 @@ def ask(
         if not getattr(message, "tool_calls", None):
             return AgentAnswer(message.content or "", calls, round_index + 1)
 
-        messages.append(
-            {
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [
-                    {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
-                    for c in message.tool_calls
-                ],
-            }
-        )
+        # Echo the provider's own message back rather than rebuilding it. Some
+        # providers attach fields the loop must return unchanged — Gemini 3.x
+        # rejects a follow-up whose functionCall lost its thought_signature.
+        messages.append(_assistant_message(message))
         for call in message.tool_calls:
             try:
                 arguments = json.loads(call.function.arguments or "{}")
@@ -301,42 +357,32 @@ def ask_stream(
                 text_parts.append(delta.content)
                 yield "text", delta.content
             for fragment in getattr(delta, "tool_calls", None) or []:
-                slot = pending.setdefault(
-                    fragment.index, {"id": "", "name": "", "arguments": ""}
-                )
-                if fragment.id:
-                    slot["id"] = fragment.id
-                if fragment.function and fragment.function.name:
-                    slot["name"] = fragment.function.name
-                if fragment.function and fragment.function.arguments:
-                    slot["arguments"] += fragment.function.arguments
+                _merge_fragment(pending, fragment)
 
         if not pending:
             answer = AgentAnswer("".join(text_parts), calls, round_index + 1)
             yield "done", answer
             return
 
+        assembled = [_finalise_slot(slot) for slot in pending.values()]
         messages.append({
             "role": "assistant",
             "content": "".join(text_parts) or None,
-            "tool_calls": [
-                {"id": slot["id"], "type": "function",
-                 "function": {"name": slot["name"], "arguments": slot["arguments"] or "{}"}}
-                for slot in pending.values()
-            ],
+            "tool_calls": assembled,
         })
 
-        for slot in pending.values():
+        for call in assembled:
+            function = call.get("function", {})
             try:
-                arguments = json.loads(slot["arguments"] or "{}")
+                arguments = json.loads(function.get("arguments") or "{}")
             except json.JSONDecodeError:
                 arguments = {}
-            executed = toolbox.dispatch(slot["name"], arguments)
+            executed = toolbox.dispatch(function.get("name", ""), arguments)
             calls.append(executed)
             yield "tool", executed
             messages.append({
                 "role": "tool",
-                "tool_call_id": slot["id"],
+                "tool_call_id": call.get("id", ""),
                 "content": f"ERROR: {executed.error}" if executed.error else executed.result_summary,
             })
 
