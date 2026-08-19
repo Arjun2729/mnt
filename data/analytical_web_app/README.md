@@ -222,8 +222,13 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 183 tests
+python -m pytest tests -q                                  # 246 tests
+python -m pytest tests --cov=groundtruth --cov-report=term-missing
 ```
+
+Coverage is **88%** of the library. The uncovered remainder is mostly `theme.py`
+(presentation, exercised only through the running app) and network paths that would need a
+live provider or a remote database.
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
 constructed data with known answers, the agent loop against a scripted fake client, `test_integration.py`
@@ -252,7 +257,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  183 tests
+tests/                  246 tests
 legacy/                 the original MVP, still runnable
 ```
 
