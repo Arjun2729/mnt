@@ -112,6 +112,14 @@ export GEMINI_API_KEY="..."
 export LLM_MODEL="gemini-3.6-flash"
 ```
 
+Keys belong in a **`.env`** beside the app — it is gitignored and loaded at startup.
+`.env.example` is the template and must stay empty; a real key there is what GitHub's push
+protection blocks, and `tests/test_config.py` fails the build if one appears.
+
+```bash
+cp .env.example .env      # then put the real key in .env, never in .env.example
+```
+
 Or just pick a provider and paste the key in the Analyst tab. Three buttons there check the
 setup before you rely on it: **Test connection**, **Check tool calling** (the analyst needs
 it, and not every model has it) and **List models** (ids change often — this asks the
@@ -180,7 +188,7 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 143 tests
+python -m pytest tests -q          # 157 tests
 ```
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
@@ -210,7 +218,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  143 tests
+tests/                  157 tests
 legacy/                 the original MVP, still runnable
 ```
 

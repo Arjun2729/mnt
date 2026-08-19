@@ -30,8 +30,12 @@ import sys
 from pathlib import Path
 
 from groundtruth.alerts import AlertStore, evaluate_all, notify, rules_from_json
+from groundtruth.config import load_env
 from groundtruth.connectors import load_api, load_database, load_path
 from groundtruth.store import Store
+
+
+load_env()
 
 
 def load_dataset(store: Store):

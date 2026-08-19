@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from groundtruth import charts, connectors, insights, llm, ml, stats, theme, timeseries
+from groundtruth.config import load_env
 from groundtruth.agent import ToolBox, ask_stream
 from groundtruth.alerts import (
     AGGREGATIONS,
@@ -33,6 +34,9 @@ from groundtruth.report import Report, render_excel, render_html
 from groundtruth.security import SecurityError
 from groundtruth.semantic import profile, profile_frame, profile_with_distributions
 from groundtruth.store import Store
+
+# Credentials from .env before any provider default is resolved.
+load_env()
 
 st.set_page_config(page_title="Groundtruth", page_icon="◆", layout="wide", initial_sidebar_state="expanded")
 theme.inject()
