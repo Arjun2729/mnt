@@ -321,3 +321,42 @@ def test_tool_rounds_are_capped_to_limit_request_spend():
     from groundtruth.agent import MAX_TOOL_ROUNDS
 
     assert MAX_TOOL_ROUNDS <= 6
+
+
+# ---------------- malformed tool arguments ----------------
+#
+# A live model called run_stat_test with no arguments at all, which raised a raw
+# TypeError. The model cannot correct itself from that; it needs to be told what
+# was expected.
+
+
+def test_missing_arguments_are_reported_not_raised(store, spec):
+    call = toolbox(store, spec).dispatch("run_stat_test", {})
+    assert call.error
+    assert "test" in call.error and "x" in call.error and "y" in call.error
+
+
+def test_partially_supplied_arguments_name_only_what_is_missing(store, spec):
+    call = toolbox(store, spec).dispatch("run_stat_test", {"test": "correlation"})
+    assert "x, y" in call.error
+    assert "Missing required" in call.error
+
+
+def test_unexpected_arguments_are_reported(store, spec):
+    call = toolbox(store, spec).dispatch("run_sql", {"query": "SELECT 1", "nonsense": True})
+    assert "Bad arguments" in call.error
+
+
+def test_valid_arguments_still_work(store, spec):
+    call = toolbox(store, spec).dispatch(
+        "run_stat_test", {"test": "compare_groups", "x": "revenue", "y": "channel"}
+    )
+    assert not call.error
+
+
+def test_required_arguments_come_from_the_schema():
+    from groundtruth.agent import _required_arguments
+
+    assert _required_arguments("run_stat_test") == ["test", "x", "y"]
+    assert _required_arguments("describe_columns") == []
+    assert _required_arguments("unknown_tool") == []

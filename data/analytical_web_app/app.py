@@ -662,9 +662,19 @@ with tabs[4]:
             "Model", value=llm.resolve_model(provider), key=f"model_{provider_name}",
             help="Model ids change often — use 'List models' to see what your key can reach.",
         )
+        if provider.suggested_models:
+            picked = st.pills(
+                "Quick pick", provider.suggested_models, key=f"pick_{provider_name}",
+                help="Verified to support tool calling. Lite models have the most generous free quotas.",
+            )
+            if picked and picked != model_name:
+                st.session_state[f"model_{provider_name}"] = picked
+                st.rerun()
+
         api_key = st.text_input(
             f"{provider_name} API key", type="password", value=llm.resolve_key(provider),
-            help=f"Or set {provider.key_env} in your environment.",
+            help=f"Or set {provider.key_env} in your environment. "
+                 f"Keys are per-provider — a key from another provider will be rejected.",
             disabled=not provider.needs_key,
         )
 

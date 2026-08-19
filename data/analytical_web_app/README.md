@@ -103,8 +103,17 @@ rather than failing; only an exhausted retry budget surfaces as an error, and th
 names the quota and what to do about it. The round ceiling is capped at 6, and the agent is
 instructed to batch lookups into as few queries as it can.
 
-If you keep hitting limits: switch to a lighter model, move to **Groq** (a much more
-generous free tier for this workload), or run **Ollama** locally, which has no limit at all.
+Gemini's quotas are **per model**, and the flagship models are the tightest: measured on a
+free key, `gemini-3.6-flash` allows 5 requests/minute — roughly one question — while
+`gemini-2.5-flash-lite` absorbed a 14-request burst without throttling. The default is
+therefore a **-lite** model, and the Analyst tab offers one-click quick-picks between the
+variants verified to support tool calling.
+
+Keys are per-provider: pasting a Groq key while "Google Gemini" is selected sends it to
+Google and gets a 401. Change the provider first — the endpoint changes with it.
+
+If limits still bite: move to **Groq**, whose free tier is far more generous for an agent
+that makes several calls per question, or run **Ollama** locally for no limit at all.
 
 ### Choosing a provider
 
@@ -114,7 +123,7 @@ method**, and is the default.
 
 | Provider | Free | Get a key |
 |---|---|---|
-| **Google Gemini** (default) | yes | https://aistudio.google.com/apikey |
+| **Google Gemini** (default, `gemini-2.5-flash-lite`) | yes | https://aistudio.google.com/apikey |
 | Groq | yes | https://console.groq.com/keys |
 | OpenRouter | models ending `:free` | https://openrouter.ai/keys |
 | Ollama | yes, runs locally | https://ollama.com/download |
@@ -123,7 +132,7 @@ method**, and is the default.
 ```bash
 export LLM_PROVIDER="Google Gemini"
 export GEMINI_API_KEY="..."
-export LLM_MODEL="gemini-3.6-flash"
+export LLM_MODEL="gemini-2.5-flash-lite"
 ```
 
 Keys belong in a **`.env`** beside the app — it is gitignored and loaded at startup.
@@ -207,7 +216,7 @@ and queries that produced it.
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q          # 172 tests
+python -m pytest tests -q          # 177 tests
 ```
 
 The suite runs entirely offline — no API key, no network. Statistics are checked against
@@ -237,7 +246,7 @@ groundtruth/            the library — 14 modules
   report.py             L5 report builder
   alerts.py             L5 state machine
   provenance.py         L5 lineage and script export
-tests/                  172 tests
+tests/                  177 tests
 legacy/                 the original MVP, still runnable
 ```
 

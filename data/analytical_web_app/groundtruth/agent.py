@@ -99,6 +99,15 @@ TOOL_SCHEMAS = [
 ]
 
 
+
+def _required_arguments(name: str) -> list[str]:
+    """The required parameters a tool declares, straight from its schema."""
+    for schema in TOOL_SCHEMAS:
+        if schema["function"]["name"] == name:
+            return list(schema["function"].get("parameters", {}).get("required", []))
+    return []
+
+
 @dataclass
 class ToolCall:
     name: str
@@ -181,6 +190,17 @@ class ToolBox:
         return f"Chart rendered: {chart_type} of {y} by {x} ({len(frame)} rows).", frame, figure
 
     def dispatch(self, name: str, arguments: dict) -> ToolCall:
+        # Models sometimes call a tool with missing or misspelled arguments. Turning
+        # that into a readable message lets the model correct itself; a raw TypeError
+        # tells it nothing about what was expected.
+        required = _required_arguments(name)
+        missing = [key for key in required if key not in arguments]
+        if missing:
+            return ToolCall(
+                name, arguments, "",
+                error=f"Missing required argument(s): {', '.join(missing)}. "
+                      f"{name} requires: {', '.join(required)}.",
+            )
         try:
             if name == "run_sql":
                 summary, frame = self.run_sql(**arguments)
@@ -195,6 +215,11 @@ class ToolBox:
                 summary, frame, figure = self.make_chart(**arguments)
                 return ToolCall(name, arguments, summary, frame, figure)
             return ToolCall(name, arguments, "", error=f"Unknown tool: {name}")
+        except TypeError as exc:
+            return ToolCall(
+                name, arguments, "",
+                error=f"Bad arguments for {name}: {exc}. Expected: {', '.join(_required_arguments(name)) or 'none'}.",
+            )
         except (SecurityError, ValueError) as exc:
             return ToolCall(name, arguments, "", error=str(exc))
         except Exception as exc:  # surfaced back to the model so it can correct itself

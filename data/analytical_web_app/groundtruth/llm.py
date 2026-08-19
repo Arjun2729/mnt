@@ -32,14 +32,25 @@ PROVIDERS: dict[str, Provider] = {
     "Google Gemini": Provider(
         name="Google Gemini",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        default_model="gemini-3.6-flash",
+        # Lite models get far more generous free-tier quotas than the flagship ones.
+        # Measured against a free key: gemini-3.6-flash allows 5 requests/minute, while
+        # 2.5-flash-lite absorbed a 14-request burst without throttling. Since the
+        # analyst spends one request per tool round, that difference decides whether a
+        # single question completes.
+        default_model="gemini-2.5-flash-lite",
         key_env="GEMINI_API_KEY",
         signup_url="https://aistudio.google.com/apikey",
         free=True,
-        note="Free tier with no payment method required. Supports tool calling and streaming.",
-        # Google retires model ids fairly aggressively. If one 404s, the error names its
-        # replacement and `list_models` reports what the key can actually reach today.
-        suggested_models=("gemini-3.6-flash", "gemini-3.6-pro", "gemini-2.5-flash"),
+        note="Free tier, no payment method required. Supports tool calling and streaming.",
+        # Verified reachable and tool-calling capable on a free key. Ids do get retired —
+        # `list_models` reports what yours can reach today.
+        suggested_models=(
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-3.6-flash",
+        ),
     ),
     "Groq": Provider(
         name="Groq",
@@ -240,10 +251,9 @@ def parse_quota_limit(error: Exception | str) -> str | None:
 # guidance rather than a contract; providers change quotas without warning.
 RATE_LIMIT_ADVICE: dict[str, str] = {
     "Google Gemini": (
-        "Free-tier limits are per-model and per-minute, and the larger models are the "
-        "tightest. If you are hitting them, try a lighter model (names containing "
-        "'flash-lite' or 'flash' rather than 'pro') — use List models to see what your "
-        "key can reach. Groq's free tier is considerably more generous for this workload."
+        "Quotas are per-model and per-minute, and the flagship models are the tightest — "
+        "gemini-3.6-flash allows only 5 requests/minute, which one question can exhaust. "
+        "The **-lite** models are far more generous and are what this app defaults to."
     ),
     "Groq": (
         "Generous free tier, typically tens of requests per minute plus a daily budget. "
