@@ -657,32 +657,51 @@ with tabs[4]:
             key="provider_name",
         )
         provider = llm.PROVIDERS[provider_name]
-        if provider.note:
-            (st.success if provider.free else st.info)(provider.note)
-        advice = llm.RATE_LIMIT_ADVICE.get(provider_name)
-        if advice:
-            st.caption(f"**Rate limits.** {advice}")
-        st.caption(
-            "The analyst spends one request per tool round, so a single question can cost "
-            "several requests against a per-minute quota."
-        )
-        if provider.signup_url:
-            st.caption(f"Get a key: {provider.signup_url}")
+        configured = bool(llm.resolve_key(provider)) or not provider.needs_key
 
-        setup = st.columns([2, 2])
-        base_url = setup[0].text_input(
-            "Base URL", value=provider.base_url or "",
-            help="The OpenAI-compatible endpoint. Leave as-is unless self-hosting.",
-            disabled=provider_name not in ("Custom (OpenAI-compatible)", "Ollama (local)"),
-        )
+        # Guidance is for choosing a provider. Once one is working it is noise, so
+        # it collapses out of the way rather than repeating itself every render.
+        if not configured:
+            if provider.note:
+                (st.success if provider.free else st.info)(provider.note)
+            if provider.signup_url:
+                st.caption(f"**Get a key:** {provider.signup_url}")
+            advice = llm.RATE_LIMIT_ADVICE.get(provider_name)
+            if advice:
+                st.caption(
+                    f"**Rate limits.** {advice} The analyst spends one request per tool "
+                    "round, so a question costs several."
+                )
+        else:
+            with st.expander("About this provider"):
+                if provider.note:
+                    st.write(provider.note)
+                advice = llm.RATE_LIMIT_ADVICE.get(provider_name)
+                if advice:
+                    st.caption(f"**Rate limits.** {advice}")
+                if provider.signup_url:
+                    st.caption(f"Keys: {provider.signup_url}")
+
+        # The endpoint is only editable when self-hosting; showing a greyed-out
+        # field for every other provider is clutter, not information.
+        editable_endpoint = provider_name in ("Custom (OpenAI-compatible)", "Ollama (local)")
+        if editable_endpoint:
+            base_url = st.text_input(
+                "Base URL", value=provider.base_url or "",
+                help="The OpenAI-compatible endpoint.",
+            )
+        else:
+            base_url = provider.base_url
+
         model_key = f"model_{provider_name}"
         # Only the provider named in the environment inherits LLM_MODEL; the others
         # start from their own default rather than another vendor's model id.
         from_env = provider_name == llm.resolve_provider().name
         st.session_state.setdefault(model_key, llm.resolve_model(provider, use_env=from_env))
-        model_name = setup[1].text_input(
+        model_name = st.text_input(
             "Model", key=model_key,
-            help="Model ids change often — use 'List models' to see what your key can reach.",
+            help="Model ids get retired without notice — 'List models' under Troubleshoot "
+                 "asks your key what it can actually reach.",
         )
         if provider.suggested_models:
             st.pills(
@@ -698,26 +717,32 @@ with tabs[4]:
             disabled=not provider.needs_key,
         )
 
-        checks = st.columns(4)
-        if checks[0].button("Test connection", width="stretch"):
-            ok, message = llm.check_connection(provider, api_key, model_name, base_url)
-            (st.success if ok else st.error)(message)
-            if not ok:
-                replacement = llm.suggest_replacement(message)
-                if replacement:
-                    st.button(
-                        f"Use {replacement} instead", type="primary", key="use_suggested_connect",
-                        on_click=set_model, args=(provider_name, replacement),
-                    )
-        if checks[1].button("Check tool calling", width="stretch"):
-            ok, message = llm.supports_tools(provider, api_key, model_name, base_url)
-            (st.success if ok else st.warning)(message)
-        if checks[2].button("List models", width="stretch"):
-            try:
-                st.code("\n".join(llm.list_models(provider, api_key, base_url)) or "none returned")
-            except Exception as exc:
-                st.error(f"{type(exc).__name__}: {exc}")
-        if checks[3].button("Clear chat", width="stretch"):
+        with st.expander("Troubleshoot"):
+            st.caption(
+                "Run these when a question fails. Model ids are retired without notice, "
+                "and not every model supports the tool calling the analyst needs."
+            )
+            checks = st.columns(3)
+            if checks[0].button("Test connection", width="stretch"):
+                ok, message = llm.check_connection(provider, api_key, model_name, base_url)
+                (st.success if ok else st.error)(message)
+                if not ok:
+                    replacement = llm.suggest_replacement(message)
+                    if replacement:
+                        st.button(
+                            f"Use {replacement} instead", type="primary", key="use_suggested_connect",
+                            on_click=set_model, args=(provider_name, replacement),
+                        )
+            if checks[1].button("Check tool calling", width="stretch"):
+                ok, message = llm.supports_tools(provider, api_key, model_name, base_url)
+                (st.success if ok else st.warning)(message)
+            if checks[2].button("List models", width="stretch"):
+                try:
+                    st.code("\n".join(llm.list_models(provider, api_key, base_url)) or "none returned")
+                except Exception as exc:
+                    st.error(f"{type(exc).__name__}: {exc}")
+
+        if S.chat and st.button("Clear chat"):
             S.chat = []
             st.rerun()
 

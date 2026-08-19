@@ -128,6 +128,18 @@ Google and gets a 401. Change the provider first — the endpoint changes with i
 If limits still bite: move to **Groq**, whose free tier is far more generous for an agent
 that makes several calls per question, or run **Ollama** locally for no limit at all.
 
+### Why a provider abstraction at all
+
+Because model ids and quotas move. During development `gemini-2.0-flash` was retired,
+`gemini-3.6-flash` turned out to allow five requests a minute, and `llama-3.3-70b-versatile`
+disappeared from Groq's catalogue entirely. Each break cost a dropdown rather than a
+rewrite, and **List models** answers "what can this key actually reach" without trusting a
+name committed to this repo.
+
+The UI hides that machinery once a provider works: guidance and diagnostics collapse, the
+endpoint field only appears when self-hosting, and the whole panel starts closed when a key
+is already configured.
+
 ### Choosing a provider
 
 The analyst talks to any OpenAI-compatible chat-completions endpoint, so the provider is a

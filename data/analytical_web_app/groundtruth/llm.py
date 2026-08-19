@@ -108,7 +108,14 @@ PROVIDERS: dict[str, Provider] = {
     ),
 }
 
-DEFAULT_PROVIDER = "Google Gemini"
+# Groq leads: its free tier is the only one that comfortably carries an agent
+# spending one request per tool round. The others exist because model ids and
+# quotas move without notice — three of them broke during development — and
+# switching provider should cost a dropdown, not a rewrite.
+# Present the recommended provider first.
+PROVIDERS = {"Groq": PROVIDERS["Groq"], **{k: v for k, v in PROVIDERS.items() if k != "Groq"}}
+
+DEFAULT_PROVIDER = "Groq"
 
 
 def resolve_provider(name: str | None = None) -> Provider:
