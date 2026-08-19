@@ -121,15 +121,24 @@ def _segment_outliers(store: Store, table: str, spec: DatasetSpec) -> list[Insig
             )
             if len(frame) < 3:
                 continue
-            overall = frame["avg_value"].mean()
-            spread = frame["avg_value"].std()
+            # Median and MAD rather than mean and standard deviation: with only a
+            # handful of groups an outlier inflates the very spread used to judge
+            # it, and the detector misses exactly what it exists to find.
+            overall = float(frame["avg_value"].median())
+            deviations = (frame["avg_value"] - overall).abs()
+            spread = float(1.4826 * deviations.median())
+            if not spread or pd.isna(spread):
+                spread = float(frame["avg_value"].std())
             if not spread or pd.isna(spread) or overall == 0:
                 continue
             frame["z"] = (frame["avg_value"] - overall) / spread
             extreme = frame.reindex(frame["z"].abs().sort_values(ascending=False).index).iloc[0]
-            if abs(extreme["z"]) < 1.3:
-                continue
             delta = (extreme["avg_value"] - overall) / abs(overall) * 100
+            # A robust scale makes tiny spreads produce large z-scores, so also
+            # require the gap to be material. Statistically unusual is not the
+            # same as worth reading.
+            if abs(extreme["z"]) < 1.3 or abs(delta) < 10:
+                continue
             out.append(
                 Insight(
                     "segment",

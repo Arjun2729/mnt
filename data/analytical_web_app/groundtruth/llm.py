@@ -117,8 +117,18 @@ def resolve_key(provider: Provider) -> str:
     return os.getenv(provider.key_env) or os.getenv("LLM_API_KEY") or ""
 
 
-def resolve_model(provider: Provider) -> str:
-    return os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or provider.default_model
+def resolve_model(provider: Provider, use_env: bool = True) -> str:
+    """The model to start with for a provider.
+
+    LLM_MODEL names a model for the configured provider, so it must not follow the
+    user to a different one — a Gemini id sent to Groq is simply wrong. Callers
+    switching provider pass use_env=False to get that provider's own default.
+    """
+    if use_env:
+        override = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL")
+        if override:
+            return override
+    return provider.default_model
 
 
 def make_client(provider: Provider, api_key: str, base_url: str | None = None):

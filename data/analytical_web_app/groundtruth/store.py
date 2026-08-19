@@ -81,11 +81,20 @@ class Store:
         self.datasets[name] = dataset
         return dataset
 
+    def _drop_any(self, name: str) -> None:
+        """Drop an object by name whether it is a table or a view."""
+        kind = self.con.execute(
+            "SELECT table_type FROM information_schema.tables WHERE table_name = ?", [name]
+        ).fetchone()
+        if not kind:
+            return
+        statement = "DROP VIEW IF EXISTS" if kind[0] == "VIEW" else "DROP TABLE IF EXISTS"
+        self.con.execute(f"{statement} {quote_ident(name)}")
+
     def drop(self, name: str) -> None:
         dataset = self.datasets.pop(name, None)
         if dataset:
-            self.con.execute(f"DROP TABLE IF EXISTS {quote_ident(dataset.table)}")
-            self.con.execute(f"DROP VIEW IF EXISTS {quote_ident(dataset.table)}")
+            self._drop_any(dataset.table)
 
     # ---------- reading ----------
 
@@ -134,17 +143,22 @@ class Store:
         return self.sql(f"SELECT * FROM {quote_ident(table)}{clause}{cap}", params or [])
 
     def create_filtered_view(self, view: str, table: str, where: str = "", params: list[Any] | None = None) -> str:
-        """Expose the current filtered slice as a view the agent can query by name."""
+        """Expose the current filtered slice under a name the agent can query.
+
+        A view cannot carry bind parameters, so a parameterised filter is
+        materialised as a table instead; an unfiltered one stays a view and
+        copies nothing.
+        """
         clause = f" WHERE {where}" if where else ""
-        if params:
-            # Views cannot carry bind parameters, so inline the already-validated literals.
-            resolved = self.con.execute(
-                f"SELECT * FROM {quote_ident(table)}{clause} LIMIT 0", params
-            )  # validates types before we materialize
-            del resolved
-            self.con.execute(f"CREATE OR REPLACE TABLE {quote_ident(view)} AS SELECT * FROM {quote_ident(table)}{clause}", params)
+        target = quote_ident(view)
+        source = quote_ident(table)
+        # The name may already exist as the other kind, and DuckDB refuses to drop a
+        # view as a table or vice versa — so ask the catalog which it is.
+        self._drop_any(view)
+        if where:
+            self.con.execute(f"CREATE TABLE {target} AS SELECT * FROM {source}{clause}", params or [])
         else:
-            self.con.execute(f"CREATE OR REPLACE VIEW {quote_ident(view)} AS SELECT * FROM {quote_ident(table)}")
+            self.con.execute(f"CREATE VIEW {target} AS SELECT * FROM {source}")
         return view
 
     def close(self) -> None:

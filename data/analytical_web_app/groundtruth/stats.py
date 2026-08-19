@@ -7,6 +7,7 @@ which is rarely the question anyone actually has.
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -240,8 +241,16 @@ def correlation_scan(df: pd.DataFrame, columns: list[str], method: str = "pearso
     for i, x in enumerate(columns):
         for y in columns[i + 1 :]:
             try:
-                result = correlation(df, x, y, method)
+                with warnings.catch_warnings():
+                    # A constant column warns rather than raising; it is filtered below.
+                    warnings.simplefilter("ignore")
+                    result = correlation(df, x, y, method)
             except Exception:
+                continue
+            # An undefined correlation must not enter the table: its NaN p-value would
+            # propagate through the FDR adjustment and mark every other pair
+            # insignificant.
+            if pd.isna(result.statistic) or pd.isna(result.p_value):
                 continue
             rows.append({"x": x, "y": y, "r": result.statistic, "p_value": result.p_value, "n": result.n,
                          "ci_low": result.ci[0] if result.ci else None, "ci_high": result.ci[1] if result.ci else None})

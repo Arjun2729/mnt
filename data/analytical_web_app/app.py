@@ -96,19 +96,30 @@ def filtered_frame(limit: int | None = None) -> pd.DataFrame:
 
 
 def sync_view() -> str:
-    """Materialise the filtered slice as a view the agent can query by name."""
+    """Expose the filtered slice under a stable name for the agent and the scan."""
     where, params = current_where()
-    table = S.store.datasets[S.active].table
-    clause = f" WHERE {where}" if where else ""
-    S.store.con.execute(
-        f'CREATE OR REPLACE TABLE "{FILTERED_VIEW}" AS SELECT * FROM "{table}"{clause}', params
-    )
-    return FILTERED_VIEW
+    return S.store.create_filtered_view(FILTERED_VIEW, S.store.datasets[S.active].table, where, params)
 
 
 def pin(kind: str, **kwargs) -> None:
     getattr(S.report, f"add_{kind}")(**kwargs)
     st.toast(f"Pinned to report ({len(S.report.blocks)} blocks)")
+
+
+def set_model(provider_name: str, model: str) -> None:
+    """Change the model field.
+
+    Streamlit forbids writing to a widget's state once that widget has been
+    instantiated during the current run, so this only ever runs as a callback —
+    callbacks fire before the rerun builds any widgets.
+    """
+    st.session_state[f"model_{provider_name}"] = model
+
+
+def use_suggested_model(provider_name: str) -> None:
+    picked = st.session_state.get(f"pick_{provider_name}")
+    if picked:
+        set_model(provider_name, picked)
 
 
 def apply_cross_filter(conditions: list[dict], origin: str) -> None:
@@ -633,9 +644,12 @@ with tabs[4]:
 
     with st.expander("Model provider", expanded=not S.chat):
         names = list(llm.PROVIDERS)
+        # Honour LLM_PROVIDER from the environment on first render; the widget's own
+        # state takes over once the user has chosen.
+        default_provider = st.session_state.get("provider_name") or llm.resolve_provider().name
         provider_name = st.selectbox(
             "Provider", names,
-            index=names.index(st.session_state.get("provider_name", llm.DEFAULT_PROVIDER)),
+            index=names.index(default_provider) if default_provider in names else 0,
             format_func=lambda n: f"{n} — free" if llm.PROVIDERS[n].free else n,
             key="provider_name",
         )
@@ -658,18 +672,21 @@ with tabs[4]:
             help="The OpenAI-compatible endpoint. Leave as-is unless self-hosting.",
             disabled=provider_name not in ("Custom (OpenAI-compatible)", "Ollama (local)"),
         )
+        model_key = f"model_{provider_name}"
+        # Only the provider named in the environment inherits LLM_MODEL; the others
+        # start from their own default rather than another vendor's model id.
+        from_env = provider_name == llm.resolve_provider().name
+        st.session_state.setdefault(model_key, llm.resolve_model(provider, use_env=from_env))
         model_name = setup[1].text_input(
-            "Model", value=llm.resolve_model(provider), key=f"model_{provider_name}",
+            "Model", key=model_key,
             help="Model ids change often — use 'List models' to see what your key can reach.",
         )
         if provider.suggested_models:
-            picked = st.pills(
+            st.pills(
                 "Quick pick", provider.suggested_models, key=f"pick_{provider_name}",
+                on_change=use_suggested_model, args=(provider_name,),
                 help="Verified to support tool calling. Lite models have the most generous free quotas.",
             )
-            if picked and picked != model_name:
-                st.session_state[f"model_{provider_name}"] = picked
-                st.rerun()
 
         api_key = st.text_input(
             f"{provider_name} API key", type="password", value=llm.resolve_key(provider),
@@ -684,9 +701,11 @@ with tabs[4]:
             (st.success if ok else st.error)(message)
             if not ok:
                 replacement = llm.suggest_replacement(message)
-                if replacement and st.button(f"Use {replacement} instead", type="primary"):
-                    st.session_state[f"model_{provider_name}"] = replacement
-                    st.rerun()
+                if replacement:
+                    st.button(
+                        f"Use {replacement} instead", type="primary", key="use_suggested_connect",
+                        on_click=set_model, args=(provider_name, replacement),
+                    )
         if checks[1].button("Check tool calling", width="stretch"):
             ok, message = llm.supports_tools(provider, api_key, model_name, base_url)
             (st.success if ok else st.warning)(message)
@@ -805,9 +824,10 @@ with tabs[4]:
                             f"`{model_name}` has been retired by {provider_name}. "
                             f"It suggests **{replacement}**."
                         )
-                        if st.button(f"Switch to {replacement}", type="primary"):
-                            st.session_state[f"model_{provider_name}"] = replacement
-                            st.rerun()
+                        st.button(
+                            f"Switch to {replacement}", type="primary", key="use_suggested_answer",
+                            on_click=set_model, args=(provider_name, replacement),
+                        )
                     else:
                         st.error(f"{type(exc).__name__}: {exc}")
                         st.caption(

@@ -89,7 +89,9 @@ def detect_leakage(df: pd.DataFrame, target: str, features: list[str], problem_t
                 r = pair.corr().iloc[0, 1]
                 if pd.notna(r) and abs(r) > 0.995:
                     warnings_found.append(f"{feature}: correlates {r:.4f} with the target — likely derived from it")
-        if problem_type == CLASSIFICATION and column.dtype == object:
+        # Not `dtype == object`: pandas gives string columns a `str` dtype now, and
+        # that comparison silently disabled this check.
+        if problem_type == CLASSIFICATION and not pd.api.types.is_numeric_dtype(column):
             crosstab = pd.crosstab(column, y)
             if len(crosstab) > 1 and (crosstab.max(axis=1) == crosstab.sum(axis=1)).all():
                 warnings_found.append(f"{feature}: each value maps to exactly one class — likely a relabelling of the target")
