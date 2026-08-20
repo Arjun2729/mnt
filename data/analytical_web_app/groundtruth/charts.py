@@ -13,6 +13,8 @@ import plotly.graph_objects as go
 
 from .semantic import DatasetSpec
 
+from .motion import CHART_TRANSITION
+
 PALETTE = ["#0B6A72", "#C2691B", "#3E6BA8", "#6B8F3E", "#8A4F8C", "#B4474C", "#4E7F8C", "#9A7B33"]
 TEMPLATE = "plotly_white"
 
@@ -70,6 +72,9 @@ def _style(figure: go.Figure, title: str = "") -> go.Figure:
     figure.update_layout(
         template=TEMPLATE,
         colorway=PALETTE,
+        # Applies when the figure's data changes — switching aggregation morphs
+        # the marks rather than snapping to the new values.
+        transition=CHART_TRANSITION,
         margin=dict(l=12, r=12, t=86 if title else 52, b=12),
         legend=dict(orientation="h", yanchor="bottom", y=1.015, xanchor="left", x=0,
                     font=dict(size=12), bgcolor="rgba(0,0,0,0)"),

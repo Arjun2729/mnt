@@ -14,6 +14,8 @@ import html
 
 import streamlit as st
 
+from . import motion
+
 FONT_LINK = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -141,6 +143,15 @@ CSS = """
 }
 .gt-finding-detail { font-size: 0.84rem; color: var(--gt-muted); line-height: 1.55; }
 
+/* ---------- selection hint ---------- */
+
+.gt-hint {
+  font-family: var(--gt-mono); font-size: 0.68rem; letter-spacing: 0.05em;
+  color: var(--gt-muted); border: 1px dashed var(--gt-rule);
+  border-radius: 4px; padding: 0.4rem 0.65rem; margin-top: 0.4rem;
+}
+.gt-hint b { color: var(--gt-accent); font-weight: 500; }
+
 /* ---------- wordmark as a link ---------- */
 
 .gt-home {
@@ -196,91 +207,22 @@ CSS = """
 .gt-feature-body { font-size: 0.86rem; color: var(--gt-muted); line-height: 1.55; }
 
 
-/* ---------- motion ---------- */
-
-@keyframes gt-rise {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
-}
-@keyframes gt-sweep {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
-}
-@keyframes gt-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.45; }
-}
-
-/* Metric tiles and finding cards arrive in a short stagger. */
-[data-testid="stMetric"],
-[data-testid="stVerticalBlockBorderWrapper"] {
-  animation: gt-rise 340ms cubic-bezier(.22,.61,.36,1) both;
-}
-[data-testid="stHorizontalBlock"] > div:nth-child(1) [data-testid="stMetric"] { animation-delay: 0ms; }
-[data-testid="stHorizontalBlock"] > div:nth-child(2) [data-testid="stMetric"] { animation-delay: 45ms; }
-[data-testid="stHorizontalBlock"] > div:nth-child(3) [data-testid="stMetric"] { animation-delay: 90ms; }
-[data-testid="stHorizontalBlock"] > div:nth-child(4) [data-testid="stMetric"] { animation-delay: 135ms; }
-[data-testid="stHorizontalBlock"] > div:nth-child(5) [data-testid="stMetric"] { animation-delay: 180ms; }
-
-/* Tiles lift and warm their accent rule on hover. */
-[data-testid="stMetric"] {
-  transition: transform 160ms ease, box-shadow 160ms ease, border-left-color 160ms ease;
-}
-[data-testid="stMetric"]:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px -10px rgba(0,0,0,0.32);
-  border-left-color: var(--gt-gap);
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] { transition: border-color 160ms ease, box-shadow 160ms ease; }
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
-  border-color: color-mix(in srgb, var(--gt-accent) 45%, transparent);
-  box-shadow: 0 4px 16px -12px rgba(0,0,0,0.4);
-}
-
-/* The rule beside a section label draws itself in. */
-.gt-label::after { transform-origin: left; animation: gt-sweep 520ms cubic-bezier(.22,.61,.36,1) both; }
-
-/* Buttons and tabs respond to the pointer. */
-.stButton button, .stDownloadButton button { transition: transform 120ms ease, box-shadow 120ms ease; }
-.stButton button:hover, .stDownloadButton button:hover { transform: translateY(-1px); }
-.stButton button:active, .stDownloadButton button:active { transform: translateY(0); }
-.stTabs [data-baseweb="tab"] { transition: color 140ms ease, background 140ms ease; }
-.stTabs [data-baseweb="tab"]:hover { background: color-mix(in srgb, var(--gt-accent) 9%, transparent); }
-
-/* A live cross-filter reads as active, not decorative. */
-.gt-live {
-  display: inline-flex; align-items: center; gap: 0.4rem;
-  font-family: var(--gt-mono); font-size: 0.66rem; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--gt-accent);
-}
-.gt-live::before {
-  content: ""; width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor; animation: gt-pulse 1.9s ease-in-out infinite;
-}
-
-/* Selection hint under an interactive chart. */
-.gt-hint {
-  font-family: var(--gt-mono); font-size: 0.68rem; letter-spacing: 0.05em;
-  color: var(--gt-muted); border: 1px dashed var(--gt-rule);
-  border-radius: 4px; padding: 0.4rem 0.65rem; margin-top: 0.4rem;
-}
-.gt-hint b { color: var(--gt-accent); font-weight: 500; }
-
-@media (prefers-reduced-motion: reduce) {
-  [data-testid="stMetric"], [data-testid="stVerticalBlockBorderWrapper"], .gt-label::after {
-    animation: none !important;
-  }
-  [data-testid="stMetric"]:hover, .stButton button:hover { transform: none !important; }
-}
-
+__MOTION__
 </style>
 """
 
 
+def stylesheet() -> str:
+    """The composed stylesheet, with the spring motion block substituted in.
+
+    One source of truth: inject() ships exactly what the tests inspect.
+    """
+    return CSS.replace("__MOTION__", motion.css())
+
+
 def inject() -> None:
     """Load the webfonts and stylesheet. Call once, immediately after set_page_config."""
-    st.markdown(FONT_LINK + CSS, unsafe_allow_html=True)
+    st.markdown(FONT_LINK + stylesheet(), unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------- components

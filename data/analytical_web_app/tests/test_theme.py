@@ -94,8 +94,11 @@ def test_hint_allows_intentional_markup(captured):
 
 
 def test_stylesheet_defines_both_themes():
-    assert "prefers-color-scheme: dark" in theme.CSS
-    assert "prefers-reduced-motion" in theme.CSS
+    """Checks the composed sheet, which is what inject() actually ships."""
+    css = theme.stylesheet()
+    assert "prefers-color-scheme: dark" in css
+    assert "prefers-reduced-motion" in css
+    assert "__MOTION__" not in css, "the motion block was never substituted"
 
 
 def test_every_custom_class_used_by_helpers_is_defined(captured):
@@ -110,8 +113,9 @@ def test_every_custom_class_used_by_helpers_is_defined(captured):
     theme.hint("y")
     emitted = " ".join(captured) + theme.pill("ok")
     used = set(re.findall(r'class="(gt-[\w-]+)"', emitted))
+    css = theme.stylesheet()
     for name in used:
-        assert f".{name}" in theme.CSS, f"{name} is emitted but never styled"
+        assert f".{name}" in css, f"{name} is emitted but never styled"
 
 
 def test_home_link_targets_the_start_screen(captured):
@@ -126,3 +130,10 @@ def test_methodology_note_states_the_rule(captured):
     theme.methodology_note("Rule: |r| >= 0.6")
     assert "gt-rule" in captured[0]
     assert "|r| &gt;= 0.6" in captured[0]      # escaped, not injected
+
+
+def test_stylesheet_carries_the_spring_curves():
+    """The motion block must survive composition, not just exist in its module."""
+    css = theme.stylesheet()
+    assert "--spring-gentle:" in css
+    assert css.count("linear(") >= 3, "spring easing curves are missing from the shipped sheet"

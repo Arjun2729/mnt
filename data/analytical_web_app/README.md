@@ -58,9 +58,34 @@ buttons; the header carries a per-measure trend strip.
 `st.fragment`s, so changing a chart type or a page does not re-profile the
 dataset or re-run any other tab.
 
-Motion is used where it carries meaning: tiles rise in a short stagger on load,
-cards lift under the pointer, and the cross-filter badge pulses while a selection
-is driving the rest of the app. All of it respects `prefers-reduced-motion`.
+### Motion
+
+Streamlit renders no React tree, and its frontend strips `<script>` from injected HTML, so
+a JavaScript animation library has nothing to attach to and a physics loop cannot run.
+`groundtruth/motion.py` therefore solves the damped-spring equation in Python and emits the
+result as CSS `linear()` easing — real overshoot, sampled from the same
+stiffness/damping/mass parameterisation animation libraries use, rather than a cubic-bezier
+that resembles one.
+
+Three springs, chosen by what they animate:
+
+| Spring | Damping ratio | Behaviour | Applied to |
+|---|---|---|---|
+| `gentle` | 0.84 | overshoots to 1.007 | tiles, cards, findings |
+| `snappy` | 0.73 | more overshoot | pointer response |
+| `settle` | 1.04 | no overshoot | anything displaying a value |
+
+That last row is deliberate: a number that bounces past its own figure reads as sloppy, so
+metric values get the critically damped curve. Tests assert each spring overshoots or does
+not, as intended.
+
+Charts carry a Plotly `transition`, so changing an aggregation morphs the marks instead of
+snapping, and the plotting area wipes in behind the container as it arrives. Long tabs
+reveal on scroll using `animation-timeline: view()` — no JavaScript, feature-detected with
+`@supports` so browsers without it simply show the content.
+
+All of it collapses under `prefers-reduced-motion`, verified in a browser: zero animated
+elements remain.
 
 ## What it decides for you
 
